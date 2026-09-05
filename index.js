@@ -5,7 +5,7 @@
  *                              Version 2.3.0
  * ════════════════════════════════════════════════════════════════════════════
  *
- *  Merged: W-MD V2 + Elite Pro MD + Lovable Cloud sync
+ *  Merged: W-MD V2+ Lovable Cloud sync
  *  Uses contacts.upsert event for full contact/channel sync.
  *  Syncs directly to Lovable Cloud (no server URL needed).
  *
