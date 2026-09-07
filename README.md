@@ -1,58 +1,54 @@
-# Killnet XMD
+# ⚡ Killnet XMD
 
-A lightweight, production-oriented WhatsApp MD bot built with **Node.js** and **Baileys**. Killnet XMD focuses on a small, reliable feature set instead of a large collection of fragile commands.
+> A professional, lightweight WhatsApp MD automation bot built with Node.js and Baileys.
 
-> **Important:** This project uses the unofficial Baileys WhatsApp Web API. Use it responsibly and comply with WhatsApp's Terms of Service. Do not use it for spam, bulk unsolicited messaging, stalking, or other abusive automation.
+**Creator:** Dian Sybex Tech  
+**Project:** Killnet XMD  
+**Prefix:** `.` by default
 
-## ✨ Features
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Baileys](https://img.shields.io/badge/Baileys-7.0.0--rc14-25D366)](https://www.npmjs.com/package/@whiskeysockets/baileys)
 
-### Automation
-- ✅ Auto-read incoming messages
-- ✅ Auto-typing presence
-- ✅ Auto-recording presence
-- ✅ Auto-reply with a custom message
-- ✅ Auto-view WhatsApp Status
-- ✅ Auto-react to messages with configurable emojis
-- ✅ Auto-react to Status updates with configurable emojis
-- ✅ Presence modes: `online`, `lastseen`, `typing`, `recording`, `off`
-- ✅ Anti-call with configurable `decline` mode and custom reply
-- ✅ Anti-delete recovery for messages still held in the bot's recent-message cache
+## ✨ Highlights
 
-### Group tools
-- ✅ `.tagall`
-- ✅ `.hidetag`
-- ✅ `.antilink`
-- ✅ `.delete` / `.del`
-- ✅ Owner-only group moderation helpers
+- 🔐 Pairing-code and QR authentication
+- 🔄 Automatic reconnect handling
+- 🛡️ **Master Sudo** with global administrative access
+- ⚙️ Auto-read, typing, recording, Status view and reactions
+- 💬 Custom auto-reply
+- 🗑️ Anti-delete recovery from the local message cache
+- 📵 Anti-call protection
+- 👥 Tag-all, hidetag and anti-link group tools
+- 🚫 Local ban/unban controls
+- 🔒 Public/private mode
+- 💾 Persistent JSON configuration
+- 🧭 Professional categorized command menu
 
-### Utility
-- ✅ `.ping`
-- ✅ `.alive`
-- ✅ `.menu` / `.help`
-- ✅ `.info`
-- ✅ `.owner`
-- ✅ `.settings`
-- ✅ `.report`
-- ✅ Public/private bot mode
-- ✅ Configurable command prefix
-- ✅ Persistent JSON settings
+## 👑 Master Sudo
 
-### Authentication
-- ✅ WhatsApp pairing-code login
-- ✅ QR-code login
-- ✅ Existing session reuse
-- ✅ Automatic credential persistence
-- ✅ Automatic reconnect for transient disconnects
-- ✅ Explicit handling of logout and restart-required disconnects
-- ✅ LID/phone-number aware JID handling
+Killnet XMD includes a global master administrator:
+
+```text
+256754851585
+```
+
+The Master Sudo is checked independently from the normal bot owner. It can use owner/admin commands **even when the bot is in private mode and even when that number is not configured as the bot owner**.
+
+Configure it with:
+
+```env
+MASTER_SUDO=256754851585
+```
+
+For security, keep the Master Sudo number private and change it if the account is ever compromised.
 
 ## 📦 Requirements
 
-- **Node.js 20 or newer**
-- A WhatsApp account that can link another device
-- A server/VPS, panel host, or local machine capable of running a persistent Node.js process
+- Node.js 20+
+- A WhatsApp account that can link a companion device
+- A persistent server/VPS/panel or local Node.js environment
 
-Killnet XMD is pinned to Baileys `7.0.0-rc14` so deployments do not silently change behavior after a fresh install. See the [Baileys npm package](https://www.npmjs.com/package/@whiskeysockets/baileys) for the current release information.
+Baileys `7.0.0-rc14` is pinned to keep fresh deployments reproducible. Baileys 7 introduces breaking changes compared with 6.x, so avoid casually changing the dependency without testing. See the official package for current release information.
 
 ## 🚀 Installation
 
@@ -60,21 +56,11 @@ Killnet XMD is pinned to Baileys `7.0.0-rc14` so deployments do not silently cha
 git clone https://github.com/Dian-quotes-trend/Killnet-XMD.git
 cd Killnet-XMD
 npm install
-```
-
-Validate the source before starting:
-
-```bash
 npm test
-```
-
-Start the bot:
-
-```bash
 npm start
 ```
 
-For development:
+Development:
 
 ```bash
 npm run dev
@@ -84,30 +70,30 @@ npm run dev
 
 ### Pairing code
 
-The default mode is `code`.
+Pairing code is the default mode.
 
-1. Start the bot with `npm start`.
-2. Enter the WhatsApp number using the international country code and **digits only**.
-3. Open WhatsApp → **Linked devices** → **Link a device** → **Link with phone number instead**.
-4. Enter the displayed pairing code.
+1. Start the bot.
+2. Enter your WhatsApp number with country code and digits only.
+3. Open WhatsApp → Linked devices → Link a device → Link with phone number instead.
+4. Enter the displayed code.
 
-Example number format:
+Example:
 
 ```text
 256700000000
 ```
 
-Do **not** enter `+`, spaces, or dashes.
+You can skip the interactive number prompt by setting:
 
-### QR mode
+```env
+PAIR_NUMBER=256700000000
+```
 
-Set:
+### QR
 
 ```env
 PAIR_MODE=qr
 ```
-
-Then start the bot and scan the QR shown in the terminal.
 
 ### Both
 
@@ -115,90 +101,79 @@ Then start the bot and scan the QR shown in the terminal.
 PAIR_MODE=both
 ```
 
-This enables pairing-code login while also allowing QR output when WhatsApp supplies a QR event.
+Pairing-code requests are made only after the socket reaches the appropriate connection/QR lifecycle event, which is important with current Baileys releases. citeturn1search0turn1search8
 
 ## ⚙️ Configuration
 
-Copy `.env.example` to `.env` and change the values for your deployment.
+Copy `.env.example` to `.env` and edit it:
 
 ```env
 BOT_NAME=Killnet XMD
 OWNER_NUMBER=256700000000
+MASTER_SUDO=256754851585
+PREFIX=.
 TIMEZONE=Africa/Kampala
 PACK_NAME=Killnet XMD
-AUTHOR=Diansybextech
+AUTHOR=Dian Sybex Tech
 PAIR_MODE=code
 QUIET_LOGS=true
 BAILEYS_LOG_LEVEL=silent
-PORT=3001
 ```
 
-### Important variables
+Never commit `.env` or `session/`.
 
-| Variable | Purpose | Example |
-|---|---|---|
-| `BOT_NAME` | Bot display name | `Killnet XMD` |
-| `OWNER_NUMBER` | Owner number, digits only | `256700000000` |
-| `PAIR_MODE` | `code`, `qr`, or `both` | `code` |
-| `QUIET_LOGS` | Reduce terminal noise | `true` |
-| `BAILEYS_LOG_LEVEL` | Baileys logger level | `silent` |
-| `PORT` | Retained for hosting compatibility | `3001` |
+## 🧭 Command Menu
 
-Never commit `.env` or the `session/` directory.
+### 🧭 General
 
-## 🧭 Command Reference
+| Command | Purpose |
+|---|---|
+| `.menu` / `.help` | Professional command menu |
+| `.ping` | Response-time check |
+| `.alive` | Bot status and uptime |
+| `.info` | Runtime information |
+| `.owner` | Owner and Master Sudo information |
 
-### General
+### ⚙️ Automation
 
-| Command | Description | Access |
-|---|---|---|
-| `.ping` | Check response time | Everyone |
-| `.alive` | Show bot status | Everyone |
-| `.menu` | Show commands | Everyone |
-| `.help` | Show commands | Everyone |
-| `.owner` | Show owner | Everyone |
-| `.info` | Show runtime information | Everyone |
-| `.settings` | Show automation state | Owner |
-
-### Automation
-
-| Command | Description |
+| Command | Purpose |
 |---|---|
 | `.autoread` | Toggle auto-read |
-| `.autotyping` | Toggle auto-typing |
-| `.autorecording` | Toggle auto-recording |
-| `.autoreply` | Toggle auto-reply; add text to set a custom message |
-| `.autostatus` | Toggle automatic Status viewing |
-| `.autoreact` | Toggle automatic message reactions |
+| `.autotyping` | Toggle typing presence |
+| `.autorecording` | Toggle recording presence |
+| `.autoreply` | Toggle/set custom auto-reply |
+| `.autostatus` | Toggle Status viewing |
+| `.autoreact` | Toggle message reactions |
 | `.autoreactstatus` | Toggle Status reactions |
-| `.antidelete` | Toggle anti-delete recovery |
+| `.antidelete` | Toggle deleted-message recovery |
 | `.anticall` | Toggle anti-call |
 | `.anticallmsg <text>` | Change anti-call reply |
-| `.presence <mode>` | Set presence mode |
+| `.presence <mode>` | `online`, `lastseen`, `typing`, `recording`, `off` |
 
-### Groups
+### 👥 Groups
 
-| Command | Description |
+| Command | Purpose |
 |---|---|
 | `.tagall` | Mention all group members |
-| `.hidetag <text>` | Mention all members without displaying the mentions |
-| `.antilink` | Toggle link protection for the current group |
+| `.hidetag` | Mention all members without visible tags |
+| `.antilink` | Toggle group link protection |
 | `.delete` / `.del` | Delete a replied message |
 
-### Owner / administration
+### 🛡️ Admin
 
-| Command | Description |
+| Command | Purpose |
 |---|---|
-| `.mode public` | Allow normal users to use commands |
-| `.mode private` | Restrict commands to owner/self |
-| `.setprefix <prefix>` | Change the command prefix |
-| `.ban @user` | Add a user to the local ban list |
-| `.unban @user` | Remove a user from the local ban list |
-| `.report <message>` | Send a report directly to the configured owner |
+| `.settings` | View automation settings |
+| `.mode public` | Public mode |
+| `.mode private` | Private mode |
+| `.setprefix <prefix>` | Change command prefix |
+| `.ban @user` | Ban a user |
+| `.unban @user` | Unban a user |
+| `.report <message>` | Send a report to the owner |
 
-## 💾 Data and session storage
+🔒 Commands marked as administrative are available to the configured owner and **Master Sudo**. Master Sudo also bypasses private mode.
 
-Runtime state is stored locally:
+## 💾 Runtime data
 
 ```text
 Killnet-XMD/
@@ -208,73 +183,36 @@ Killnet-XMD/
 │   ├── anticall.json
 │   ├── banned.json
 │   └── antilink.json
-├── session/
-│   └── WhatsApp authentication files
+├── session/                  # WhatsApp authentication — keep private
 ├── config.js
 ├── index.js
-└── package.json
+├── package.json
+└── README.md
 ```
 
-Both `data/` and `session/` are ignored by Git.
+## 🔄 Reconnection
 
-**Back up `session/` carefully** if you want to preserve a linked account. Never publish it.
-
-## 🔄 Reconnection behavior
-
-Killnet XMD distinguishes normal connection restarts from permanent logout conditions:
-
-- `restartRequired` / `515` → recreate the socket
-- transient connection failures → reconnect after a short delay
-- `connectionReplaced` → wait longer before reconnecting
-- `loggedOut` / `403` → stop and require a fresh pairing
-
-This avoids treating every disconnect as a fatal error or blindly reusing a bad session.
+Killnet XMD recreates the socket for transient disconnects and restart-required states, while permanent logout conditions require a new pairing. This prevents normal connection interruptions from being treated as permanent authentication failures.
 
 ## 🧪 Validation
 
-The repository includes a lightweight CI check:
+Run:
 
 ```bash
 npm test
 ```
 
-It validates the JavaScript syntax for the main runtime, configuration, and session helper. GitHub Actions runs the same check on Node.js 20 for pushes and pull requests.
+CI performs JavaScript validation on Node.js 20. A syntax/CI pass cannot replace a live WhatsApp test: pairing, message delivery, Status events, calls and group operations require a real linked account.
 
-A successful syntax check does **not** replace a real WhatsApp integration test. Pairing, message delivery, Status events, calls, and group administration require a live WhatsApp account.
+## ⚠️ Responsible use
 
-## 🏗️ Project structure
+Killnet XMD uses the unofficial WhatsApp Web API through Baileys. Use it responsibly. Do not use it for spam, bulk unsolicited messaging, stalking, harassment, or other abusive automation. Follow WhatsApp's terms and applicable laws.
 
-```text
-.
-├── .github/workflows/ci.yml   # Node 20 CI validation
-├── .env.example                # Deployment template
-├── config.js                   # Environment/config loader
-├── index.js                    # Bot runtime and command handlers
-├── lib/session.js              # Session validation/quarantine helper
-├── package.json                # Dependencies and scripts
-├── BAILEYS_REVIEW.md           # Baileys compatibility notes
-└── README.md                   # Documentation
-```
-
-## 🛡️ Security notes
-
-- Keep `session/` private.
-- Keep `.env` private.
-- Use a dedicated WhatsApp number for automation where appropriate.
-- Do not expose authentication files through a public web server.
-- Set a real `OWNER_NUMBER`; owner-only commands depend on it.
-- Do not run multiple bot instances against the same session.
-
-## 📚 Baileys compatibility
-
-Killnet XMD targets Baileys `7.0.0-rc14`. Baileys 7 contains breaking changes compared with the 6.x line, so the dependency is intentionally pinned rather than using a loose version range. The project also uses Node.js 20+, matching the current Baileys quickstart requirement. See the [Baileys quickstart documentation](https://github.com/WhiskeySockets/docs/blob/main/quickstart.mdx).
-
-## 📄 License
-
-See [LICENSE](LICENSE).
+Baileys currently lists `7.0.0-rc14` as its latest npm release, with `6.7.24` maintained as a legacy line. citeturn1search9
 
 ## 👨‍💻 Credits
 
-**Killnet XMD** by **Diansybextech**.
+**Killnet XMD**  
+Created by **Dian Sybex Tech**.
 
-Built with [Baileys](https://github.com/WhiskeySockets/Baileys).
+Built with **Baileys**.
