@@ -52,7 +52,7 @@ A lightweight, production-oriented WhatsApp MD bot built with **Node.js** and **
 - A WhatsApp account that can link another device
 - A server/VPS, panel host, or local machine capable of running a persistent Node.js process
 
-Baileys currently publishes `7.0.0-rc14` as the npm `latest` release, and Killnet XMD is pinned to that version so deployments do not silently change behavior after a fresh install. citehttps://www.npmjs.com/package/%40whiskeysockets/baileys
+Killnet XMD is pinned to Baileys `7.0.0-rc14` so deployments do not silently change behavior after a fresh install. See the [Baileys npm package](https://www.npmjs.com/package/@whiskeysockets/baileys) for the current release information.
 
 ## 🚀 Installation
 
@@ -267,7 +267,7 @@ A successful syntax check does **not** replace a real WhatsApp integration test.
 
 ## 📚 Baileys compatibility
 
-Killnet XMD targets Baileys `7.0.0-rc14`. Baileys 7 contains breaking changes compared with the 6.x line, so the dependency is intentionally pinned rather than using a loose version range. The project also uses Node.js 20+, matching the current Baileys quickstart requirement. citehttps://github.com/WhiskeySockets/docs/blob/main/quickstart.mdx
+Killnet XMD targets Baileys `7.0.0-rc14`. Baileys 7 contains breaking changes compared with the 6.x line, so the dependency is intentionally pinned rather than using a loose version range. The project also uses Node.js 20+, matching the current Baileys quickstart requirement. See the [Baileys quickstart documentation](https://github.com/WhiskeySockets/docs/blob/main/quickstart.mdx).
 
 ## 📄 License
 
