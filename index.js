@@ -19,7 +19,6 @@ const {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   Browsers,
-  downloadContentFromMessage,
   jidNormalizedUser,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
@@ -32,9 +31,6 @@ const { provisionSession, validateSession, quarantineSession } = require('./lib/
 let qrTerminal = null;
 try { qrTerminal = require('qrcode-terminal'); } catch { /* optional */ }
 
-// ─── Hardcoded Supabase/Cloud credentials (security: not in .env) ──
-const SUPABASE_URL = 'https://xfxrobmibzxslfxujlof.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmeHJvYm1pYnp4c2xmeHVqbG9mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MTk4ODMsImV4cCI6MjA4NjM5NTg4M30.sKuvLTJPzYYsqH93vABVo33XGpSbwhmFmE7quB9R-ro';
 
 // ─── Contact store (replaces makeInMemoryStore) ─────────────────
 const contactStore = new Map(); // jid -> { name, type }
