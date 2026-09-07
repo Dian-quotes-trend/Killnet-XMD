@@ -1,17 +1,22 @@
 {
-  "name": "w-md-bot",
-  "version": "2.0.0",
-  "description": "WhatsApp MD Bot with Baileys - Pairing Code & QR Auth",
+  "name": "killnet-xmd",
+  "version": "3.0.0",
+  "description": "Killnet XMD — lightweight WhatsApp MD bot powered by Baileys",
   "main": "index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "check": "node --check index.js && node --check config.js && node --check lib/session.js",
+    "test": "npm run check"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "7.0.0-rc14",
     "pino": "^9.6.0",
-    "qrcode-terminal": "^0.12.0",
-    "@hapi/boom": "^10.0.1"
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
