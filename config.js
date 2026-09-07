@@ -26,19 +26,7 @@ const pick = (key, fallback = '') => {
   return value !== undefined && String(value).trim() !== '' ? String(value).trim() : fallback;
 };
 
-if (pick('QUIET_LOGS', 'true').toLowerCase() !== 'false') {
-  const originalLog = console.log.bind(console);
-  const originalInfo = console.info.bind(console);
-  const originalWarn = console.warn.bind(console);
-  const quiet = (original) => (...args) => {
-    const text = args.map((arg) => String(arg)).join(' ');
-    if (/PAIRING CODE/i.test(text)) return original(...args);
-  };
-  console.log = quiet(originalLog);
-  console.info = quiet(originalInfo);
-  console.warn = quiet(originalWarn);
-}
-
+// Keep application console logs visible. Baileys itself is kept quiet through pino.
 if (process.env.BAILEYS_LOG_LEVEL === undefined) process.env.BAILEYS_LOG_LEVEL = 'silent';
 
 let pairMode = pick('PAIR_MODE', '').toLowerCase();
