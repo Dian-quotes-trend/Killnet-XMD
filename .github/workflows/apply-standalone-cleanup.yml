@@ -1,0 +1,136 @@
+name: Apply standalone runtime cleanup
+
+on:
+  push:
+    branches: [cleanup/standalone-runtime]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ !contains(github.event.head_commit.message, 'apply standalone index cleanup') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Patch legacy dashboard code out of index.js
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          p = Path('index.js')
+          s = p.read_text(encoding='utf-8')
+
+          # Remove dashboard/cloud-only imports and API bootstrap.
+          s = s.replace("const axios = require('axios');\n", "")
+          s = s.replace("const { startAPI } = require('./api');\n", "")
+          s = re.sub(r"\n\s*try \{ startAPI\(state, \(\) => safeStartBot\('api-restart'\)\); \} catch \(e\) \{ console\.log\('⚠️ API server not started:', e\.message\); \}\n", "\n", s)
+
+          # Dashboard websocket broadcasts become local no-ops.
+          s = re.sub(
+              r"function emitWs\(event, payload\) \{.*?\n\}",
+              "function emitWs() {}",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Remove the entire cloud sync implementation and keep tiny local stubs
+          # for legacy call sites that are still useful to the bot.
+          s = re.sub(
+              r"// ─── Lovable Cloud Sync.*?// ─── Baileys message decoding helpers",
+              """// ─── Standalone runtime: cloud/dashboard sync disabled ─────────────\nasync function syncToCloud() { return null; }\nfunction syncChatMessage() {}\nfunction enqueueChatSync() {}\nasync function flushChatSyncQueue() {}\nfunction schedulePendingMedia() {}\n\n// ─── Baileys message decoding helpers""",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Media is handled locally; never upload inbound media to a dashboard.
+          s = re.sub(
+              r"// Decrypt \+ upload a media message to Lovable Cloud with retry/backoff\..*?// Build the full chat_message payload from a Baileys msg",
+              """// Dashboard media upload removed. Metadata remains local and no network\n// request is made when media messages are received.\nasync function downloadAndUploadMedia() { return null; }\n\n// Build the full chat_message payload from a Baileys msg""",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Cloud settings are no longer a source of truth.
+          s = re.sub(
+              r"// Fetch settings from cloud — returns full row so caller can react to flags.*?// ─── Helpers",
+              """async function fetchCloudSettings() { return null; }\n\n// ─── Helpers""",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Contact cloud sync is disabled; keep event call sites harmless.
+          s = re.sub(
+              r"function scheduleContactSync\(sock, reason = 'event', delayMs = 8000\) \{.*?\n\}\n\nasync function syncContactsToCloud\(sock, reason = 'manual'\) \{.*?\n\}",
+              """function scheduleContactSync() {}\nasync function syncContactsToCloud() { return null; }""",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Remove the dashboard contact-import worker and its timers.
+          s = re.sub(
+              r"// ─── Scheduled contact import worker \(20 contacts every 15 min\) ──.*?async function main\(\)",
+              "async function main()",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Remove the dashboard control-flag poller.
+          s = re.sub(
+              r"// ─── Dashboard control flag poller \(pair_requested, backfill\) ──.*?// ─── Scheduled contact import \(20 / 15 min\) ──────────────────────",
+              "// ─── Standalone runtime: dashboard control polling disabled ─────",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Remove the 5-second dashboard outbound queue poller, leaving a local
+          # no-op marker function so older references remain safe.
+          s = re.sub(
+              r"// ── Dashboard Message Queue Polling \(every 5 seconds\) ──.*?// Helper to mark messages",
+              "// Dashboard message queue removed.\n  // Helper to mark messages",
+              s,
+              count=1,
+              flags=re.S,
+          )
+          s = re.sub(
+              r"// Helper to mark messages\n\s*async function markMessage\(id, action\) \{.*?\n\s*\}\n",
+              "// Legacy dashboard acknowledgement is now a local no-op.\n  async function markMessage() { return true; }\n",
+              s,
+              count=1,
+              flags=re.S,
+          )
+
+          # Remove dashboard-only startup calls while preserving normal startup.
+          s = s.replace("  // GF2: Clear stale dashboard requests at startup so a previous offline-pair\n  // request can't crash a freshly-restored session.\n  await syncToCloud('clear_stale_requests', {}).catch(() => {});\n\n", "")
+          s = s.replace("  // Fetch settings from cloud first (best effort — never block on cloud)\n  await fetchCloudSettings().catch(() => {});\n\n", "")
+          s = re.sub(r"\n\s*state\.requestPairing = requestPairing;\n\s*state\.botSnapshot = botSnapshot;\n\s*state\.isSocketLive = \(\) => isSocketLive\(\);\n", "\n", s, count=1)
+
+          # Do not initialize a dashboard transport from main().
+          s = re.sub(r"\n\s*try \{ startAPI\(state, \(\) => safeStartBot\('api-restart'\)\); \} catch \(e\) \{.*?\}\n", "\n", s, count=1)
+
+          p.write_text(s, encoding='utf-8')
+
+      - name: Validate syntax
+        run: node --check index.js && node --check config.js && node --check api.js
+
+      - name: Commit patched index.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.js
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: apply standalone index cleanup"
+          git push
