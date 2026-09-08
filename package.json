@@ -9,8 +9,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "check": "node --check index.js && node --check config.js && node --check lib/session.js",
-    "test": "npm run check"
+    "check": "node --check index.js && node --check config.js && node --check lib/session.js && node --check lib/command-parser.js && node --check lib/message-context.js && node --check test/phase0a.test.js",
+    "test": "npm run check && node test/phase0a.test.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
