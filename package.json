@@ -3,14 +3,12 @@
   "version": "3.0.0",
   "description": "Killnet XMD — lightweight WhatsApp MD bot powered by Baileys",
   "main": "index.js",
-  "engines": {
-    "node": ">=20.0.0"
-  },
+  "engines": {"node": ">=20.0.0"},
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "check": "node --check index.js && node --check config.js && node --check lib/session.js && node --check lib/command-parser.js && node --check lib/message-context.js && node --check lib/command-registry.js && node --check lib/command-router.js && node --check test/phase0a.test.js && node --check test/phase0b.test.js",
-    "test": "npm run check && node test/phase0a.test.js && node test/phase0b.test.js"
+    "check": "node --check index.js && node --check config.js && node --check lib/session.js && node --check lib/command-parser.js && node --check lib/message-context.js && node --check lib/command-registry.js && node --check lib/command-router.js && node --check lib/permissions.js && node --check lib/command-categories.js && node --check test/phase0a.test.js && node --check test/phase0b.test.js && node --check test/phase0c.test.js",
+    "test": "npm run check && node test/phase0a.test.js && node test/phase0b.test.js && node test/phase0c.test.js"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
@@ -18,7 +16,5 @@
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   },
-  "devDependencies": {
-    "nodemon": "^3.1.9"
-  }
+  "devDependencies": {"nodemon": "^3.1.9"}
 }
