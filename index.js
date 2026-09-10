@@ -39,12 +39,11 @@ function uptime() { const t = Math.floor(process.uptime()); return `${Math.floor
 function pick(list) { return list[Math.floor(Math.random() * list.length)] || '👍'; }
 function log(title, message = '') { const line = message ? `│ ${message}` : '│'; console.log(`\n╭── ${title} ─────────────────`); console.log(line); console.log('╰────────────────────────────'); }
 
-const settings = { prefix: config.prefix || '.', botName: config.botName || 'Killnet XMD', creator: config.creator || 'Dian Sybex Tech', ownerNumber: config.ownerNumber || '', mode: 'public', autoRead: false, autoTyping: false, autoRecording: false, autoStatusView: false, autoReact: false, autoLikeStatus: false, autoReply: { enabled: false, message: 'Hello! I am currently unavailable.' }, antiDelete: false, antiCall: { enabled: false, mode: 'decline', message: '🚫 Calls are not allowed. Please send a message instead.' }, presenceMode: 'online', autoReactEmojis: ['❤️', '🔥', '👍', '😂', '🎉'], statusReactEmojis: ['👍', '❤️', '🔥', '😮', '💯'] };
+const settings = { prefix: config.prefix || '.', botName: config.botName || 'Killnet XMD', creator: config.creator || 'Dian Sybex Tech', ownerNumber: config.ownerNumber || '', mode: 'public', autoRead: false, autoReact: false, autoReply: { enabled: false, message: 'Hello! I am currently unavailable.' }, antiDelete: false, antiCall: { enabled: false, mode: 'decline', message: '🚫 Calls are not allowed. Please send a message instead.' }, presenceMode: 'online', autoReactEmojis: ['❤️', '🔥', '👍', '😂', '🎉'] };
 Object.assign(settings, loadJson('settings.json', {}));
 settings.autoReply = { enabled: false, message: 'Hello! I am currently unavailable.', ...settings.autoReply, ...loadJson('autoreply.json', {}) };
 settings.antiCall = { enabled: false, mode: 'decline', message: '🚫 Calls are not allowed. Please send a message instead.', ...settings.antiCall, ...loadJson('anticall.json', {}) };
-settings.autoReactEmojis = Array.isArray(settings.autoReactEmojis) ? settings.autoReactEmojis : ['❤️'];
-settings.statusReactEmojis = Array.isArray(settings.statusReactEmojis) ? settings.statusReactEmojis : ['❤️'];
+settings.autoReactEmojis = Array.isArray(settings.autoReactEmojis) && settings.autoReactEmojis.length ? settings.autoReactEmojis : ['❤️'];
 const bannedUsers = new Set(loadJson('banned.json', []));
 const antilinkGroups = new Set(loadJson('antilink.json', []));
 const recentMessages = new Map();
@@ -58,58 +57,55 @@ function isMasterSudo(msg) { return !!masterNumber() && identityCandidates(msg).
 function hasAdminAccess(msg) { return isOwner(msg) || isMasterSudo(msg); }
 function accessLabel(msg) { if (isMasterSudo(msg)) return 'MASTER SUDO'; if (isOwner(msg)) return 'OWNER'; return 'USER'; }
 async function send(sock, jid, text, msg, extra = {}) { return sock.sendMessage(jid, { text, ...extra }, msg ? { quoted: msg } : undefined); }
-async function isAdmin(sock, group, user) { try { const metadata = await sock.groupMetadata(group); return metadata.participants.some((p) => phoneOf(p.id) === phoneOf(user) && ['admin', 'superadmin'].includes(p.admin)); } catch { return false; } }
 async function tagAll(sock, msg, hidden = false) { const jid = remoteJid(msg); if (!isGroup(jid)) return send(sock, jid, 'ℹ️ This command is for groups only.', msg); const metadata = await sock.groupMetadata(jid); const mentions = metadata.participants.map((p) => p.id); const body = hidden ? '📢 Attention everyone!' : `📢 *${settings.botName} — TAG ALL*\n\n${mentions.map((id) => `@${id.split('@')[0]}`).join('\n')}`; return sock.sendMessage(jid, { text: body, mentions }, { quoted: msg }); }
 
 const commands = new Map();
 const command = (name, description, handler, ownerOnly = false, category = 'GENERAL') => commands.set(name, { description, handler, ownerOnly, category });
 let live;
-command('ping', 'Check bot response time', async (sock, msg) => send(sock, remoteJid(msg), `🏓 *PONG* • ${Date.now() % 1000}ms`, msg));
-command('alive', 'Show bot status', async (sock, msg) => send(sock, remoteJid(msg), `╭───〔 *${settings.botName}* 〕\n│ 🟢 Status: Online\n│ 🔐 Access: ${accessLabel(msg)}\n│ ⏱ Uptime: ${uptime()}\n│ ⚙️ Mode: ${settings.mode}\n│ 🔣 Prefix: ${settings.prefix}\n╰────────────────`, msg));
+command('ping', 'Fast connection check', async (sock, msg) => send(sock, remoteJid(msg), `🏓 *PONG* • ${Date.now() % 1000}ms`, msg));
+command('alive', 'Show bot status', async (sock, msg) => send(sock, remoteJid(msg), `╭━━〔 *${settings.botName}* 〕━━╮\n┃ 🟢 Online & ready\n┃ 🔐 Access: ${accessLabel(msg)}\n┃ ⏱ Uptime: ${uptime()}\n┃ ⚙️ Mode: ${settings.mode}\n┃ 🔣 Prefix: ${settings.prefix}\n╰━━━━━━━━━━━━━━━━━━━━╯`, msg));
 command('owner', 'Show configured owner and master', async (sock, msg) => send(sock, remoteJid(msg), `👑 *Owner:* ${settings.ownerNumber || 'Not configured'}\n🛡️ *Master Sudo:* ${config.masterSudo || 'Not configured'}\n🔐 *Your access:* ${accessLabel(msg)}`, msg));
-command('info', 'Show runtime information', async (sock, msg) => send(sock, remoteJid(msg), `╭──〔 *${settings.botName} INFO* 〕\n│ ⚡ Version: 3.2.0\n│ 🟢 Node: ${process.version}\n│ ⏱ Uptime: ${uptime()}\n│ 💾 Memory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB\n│ 👨‍💻 Creator: ${settings.creator}\n╰────────────────`, msg));
-command('menu', 'Show the professional command menu', async (sock, msg) => { const order = ['CORE', 'INFO', 'CONFIG', 'AUTOMATION', 'GROUP', 'MODERATION', 'ADMIN', 'UTILITY']; const icons = { CORE: '🧭', INFO: 'ℹ️', CONFIG: '⚙️', AUTOMATION: '🤖', GROUP: '👥', MODERATION: '🛡️', ADMIN: '🔐', UTILITY: '🧰' }; const lines = [`╭━━━〔 *${settings.botName}* 〕━━━╮`, `┃ ⚡ *SMART WHATSAPP AUTOMATION*`, `┃ 👨‍💻 ${settings.creator}`, `┃ 🔣 Prefix: *${settings.prefix}*`, `┃ 🔐 Mode: *${settings.mode.toUpperCase()}*`, `╰━━━━━━━━━━━━━━━━━━━━╯`, '']; const registry = live.registry; for (const category of order) { const items = registry.list(category); if (!items.length) continue; lines.push(`${icons[category] || '•'} *${category}*`); for (const item of items) lines.push(`  ${settings.prefix}${item.name} — ${item.description}${item.ownerOnly ? ' 🔒' : ''}`); lines.push(''); } lines.push(`💡 *${settings.prefix}help* • 🛡️ Owner + Master Sudo have full admin access`); lines.push(`🛠️ Powered by *${settings.creator}*`); return send(sock, remoteJid(msg), lines.join('\n'), msg); });
-command('settings', 'Show automation settings', async (sock, msg) => send(sock, remoteJid(msg), `⚙️ *SETTINGS*\n\n• Auto-read: ${settings.autoRead ? 'ON' : 'OFF'}\n• Auto-typing: ${settings.autoTyping ? 'ON' : 'OFF'}\n• Auto-recording: ${settings.autoRecording ? 'ON' : 'OFF'}\n• Auto-status: ${settings.autoStatusView ? 'ON' : 'OFF'}\n• Auto-react: ${settings.autoReact ? 'ON' : 'OFF'}\n• Status-react: ${settings.autoLikeStatus ? 'ON' : 'OFF'}\n• Auto-reply: ${settings.autoReply.enabled ? 'ON' : 'OFF'}\n• Anti-delete: ${settings.antiDelete ? 'ON' : 'OFF'}\n• Anti-call: ${settings.antiCall.enabled ? 'ON' : 'OFF'}\n• Presence: ${settings.presenceMode}\n• Mode: ${settings.mode}`, msg), true, 'ADMIN');
-for (const [name, key, desc] of [['autoread','autoRead','Toggle automatic read receipts'],['autotyping','autoTyping','Toggle typing presence'],['autorecording','autoRecording','Toggle recording presence'],['autostatus','autoStatusView','Toggle automatic Status viewing'],['autoreact','autoReact','Toggle automatic message reactions'],['autoreactstatus','autoLikeStatus','Toggle Status reactions'],['antidelete','antiDelete','Toggle deleted-message recovery']]) command(name, desc, async (sock, msg) => { settings[key] = !settings[key]; persistSettings(); return send(sock, remoteJid(msg), `✅ *${name}*: ${settings[key] ? 'ON' : 'OFF'}`, msg); }, true, 'AUTOMATION');
-command('autoreply', 'Toggle/set automatic replies', async (sock, msg, args) => { if (args.length) { settings.autoReply.message = args.join(' '); settings.autoReply.enabled = true; } else settings.autoReply.enabled = !settings.autoReply.enabled; persistSettings(); return send(sock, remoteJid(msg), `✅ Auto-reply: ${settings.autoReply.enabled ? 'ON' : 'OFF'}${args.length ? `\n📝 ${settings.autoReply.message}` : ''}`, msg); }, true, 'AUTOMATION');
-command('presence', 'Set online/lastseen/typing/recording/off', async (sock, msg, args) => { const mode = (args[0] || '').toLowerCase(); const valid = ['online','lastseen','typing','recording','off']; if (!valid.includes(mode)) return send(sock, remoteJid(msg), `Usage: ${settings.prefix}presence ${valid.join('/')}`, msg); settings.presenceMode = mode; persistSettings(); return send(sock, remoteJid(msg), `✅ Presence: ${mode}`, msg); }, true, 'AUTOMATION');
+command('info', 'Show runtime information', async (sock, msg) => send(sock, remoteJid(msg), `╭━━〔 *${settings.botName}* 〕━━╮\n┃ ⚡ Runtime: Node ${process.version}\n┃ ⏱ Uptime: ${uptime()}\n┃ 💾 Memory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB\n┃ 👨‍💻 ${settings.creator}\n╰━━━━━━━━━━━━━━━━━━━━╯`, msg));
+command('menu', 'Show the branded command center', async (sock, msg) => { const order = ['CORE', 'INFO', 'CONFIG', 'AUTOMATION', 'GROUP', 'MODERATION', 'ADMIN', 'UTILITY']; const icons = { CORE: '⚡', INFO: 'ℹ️', CONFIG: '⚙️', AUTOMATION: '🤖', GROUP: '👥', MODERATION: '🛡️', ADMIN: '🔐', UTILITY: '🧰' }; const lines = [`╭━━━━━━━━━━━━━━━━━━━━╮`, `┃   *${settings.botName}*`, `┃  *Dian Sybex Tech*`, `┣━━━━━━━━━━━━━━━━━━━━┫`, `┃ ⚡ *COMMAND CENTER*`, `┃ 🔣 Prefix: *${settings.prefix}*`, `┃ 🌐 Mode: *${settings.mode.toUpperCase()}*`, `╰━━━━━━━━━━━━━━━━━━━━╯`, '']; const registry = live.registry; for (const category of order) { const items = registry.list(category); if (!items.length) continue; lines.push(`${icons[category] || '•'} *${category}*`); for (const item of items) lines.push(`  ${settings.prefix}${item.name} — ${item.description}${item.ownerOnly ? ' 🔒' : ''}`); lines.push(''); } lines.push(`💡 *${settings.prefix}help* is the menu shortcut`); lines.push(`🔒 = owner/master only`); lines.push(`╰─ *Powered by ${settings.creator}* ─╯`); return send(sock, remoteJid(msg), lines.join('\n'), msg); });
+command('settings', 'Show active automation settings', async (sock, msg) => send(sock, remoteJid(msg), `╭━━〔 *ACTIVE SETTINGS* 〕━━╮\n┃ 📖 Auto-read: ${settings.autoRead ? 'ON' : 'OFF'}\n┃ ❤️ Auto-react: ${settings.autoReact ? 'ON' : 'OFF'}\n┃ 💬 Auto-reply: ${settings.autoReply.enabled ? 'ON' : 'OFF'}\n┃ 🛡️ Anti-delete: ${settings.antiDelete ? 'ON' : 'OFF'}\n┃ 📵 Anti-call: ${settings.antiCall.enabled ? 'ON' : 'OFF'}\n┃ 👁️ Presence: ${settings.presenceMode}\n┃ 🌐 Mode: ${settings.mode}\n╰━━━━━━━━━━━━━━━━━━━━╯`, msg), true, 'ADMIN');
+for (const [name, key, desc] of [['autoread', 'autoRead', 'Toggle automatic read receipts'], ['autoreact', 'autoReact', 'Toggle automatic message reactions'], ['antidelete', 'antiDelete', 'Toggle deleted-message recovery']]) command(name, desc, async (sock, msg) => { settings[key] = !settings[key]; persistSettings(); return send(sock, remoteJid(msg), `✅ *${name}*: ${settings[key] ? 'ON' : 'OFF'}`, msg); }, true, 'AUTOMATION');
+command('autoreply', 'Toggle or set automatic replies', async (sock, msg, args) => { if (args.length) { settings.autoReply.message = args.join(' '); settings.autoReply.enabled = true; } else settings.autoReply.enabled = !settings.autoReply.enabled; persistSettings(); return send(sock, remoteJid(msg), `✅ Auto-reply: ${settings.autoReply.enabled ? 'ON' : 'OFF'}${args.length ? `\n📝 ${settings.autoReply.message}` : ''}`, msg); }, true, 'AUTOMATION');
+command('presence', 'Set online or off', async (sock, msg, args) => { const mode = (args[0] || '').toLowerCase(); if (!['online', 'off'].includes(mode)) return send(sock, remoteJid(msg), `Usage: ${settings.prefix}presence online/off`, msg); settings.presenceMode = mode; persistSettings(); return send(sock, remoteJid(msg), `✅ Presence: ${mode}`, msg); }, true, 'AUTOMATION');
 command('anticall', 'Toggle anti-call protection', async (sock, msg) => { settings.antiCall.enabled = !settings.antiCall.enabled; persistSettings(); return send(sock, remoteJid(msg), `✅ Anti-call: ${settings.antiCall.enabled ? 'ON' : 'OFF'}`, msg); }, true, 'AUTOMATION');
 command('anticallmsg', 'Set the anti-call reply', async (sock, msg, args) => { if (!args.length) return send(sock, remoteJid(msg), settings.antiCall.message, msg); settings.antiCall.message = args.join(' '); persistSettings(); return send(sock, remoteJid(msg), '✅ Anti-call message updated.', msg); }, true, 'AUTOMATION');
 command('tagall', 'Mention all group members', async (sock, msg) => tagAll(sock, msg), false, 'GROUP');
 command('hidetag', 'Mention everyone without visible tags', async (sock, msg) => tagAll(sock, msg, true), false, 'GROUP');
 command('antilink', 'Toggle link protection for this group', async (sock, msg) => { const jid = remoteJid(msg); if (!isGroup(jid)) return send(sock, jid, 'ℹ️ Groups only.', msg); if (antilinkGroups.has(jid)) antilinkGroups.delete(jid); else antilinkGroups.add(jid); saveJson('antilink.json', [...antilinkGroups]); return send(sock, jid, `✅ Anti-link: ${antilinkGroups.has(jid) ? 'ON' : 'OFF'}`, msg); }, true, 'GROUP');
 command('delete', 'Delete a replied message', async (sock, msg) => { const jid = remoteJid(msg); const ctx = msg.message?.extendedTextMessage?.contextInfo; if (!ctx?.stanzaId) return send(sock, jid, '📎 Reply to a message to delete it.', msg); return sock.sendMessage(jid, { delete: { remoteJid: jid, fromMe: !!msg.key.fromMe, id: ctx.stanzaId, participant: ctx.participant } }); }, false, 'GROUP');
-command('mode', 'Switch public/private mode', async (sock, msg, args) => { const mode = (args[0] || '').toLowerCase(); if (!['public','private'].includes(mode)) return send(sock, remoteJid(msg), `Current: ${settings.mode}\nUsage: ${settings.prefix}mode public/private`, msg); settings.mode = mode; persistSettings(); return send(sock, remoteJid(msg), `✅ Bot mode: ${mode}`, msg); }, true, 'ADMIN');
-command('setprefix', 'Change command prefix', async (sock, msg, args) => { const prefix = args[0]; if (!prefix || prefix.length > 2) return send(sock, remoteJid(msg), `Usage: ${settings.prefix}setprefix <prefix>`, msg); settings.prefix = prefix; persistSettings(); return send(sock, remoteJid(msg), `✅ Prefix changed to ${prefix}`, msg); }, true, 'ADMIN');
+command('mode', 'Switch public or private mode', async (sock, msg, args) => { const mode = (args[0] || '').toLowerCase(); if (!['public', 'private'].includes(mode)) return send(sock, remoteJid(msg), `Current: ${settings.mode}\nUsage: ${settings.prefix}mode public/private`, msg); settings.mode = mode; persistSettings(); return send(sock, remoteJid(msg), `✅ Bot mode: ${mode}`, msg); }, true, 'ADMIN');
+command('setprefix', 'Change the command prefix', async (sock, msg, args) => { const prefix = args[0]; if (!prefix || prefix.length > 2) return send(sock, remoteJid(msg), `Usage: ${settings.prefix}setprefix <prefix>`, msg); settings.prefix = prefix; persistSettings(); return send(sock, remoteJid(msg), `✅ Prefix changed to ${prefix}`, msg); }, true, 'ADMIN');
 command('ban', 'Ban a user by reply or number', async (sock, msg, args) => { const target = msg.message?.extendedTextMessage?.contextInfo?.participant || args[0]; const number = phoneOf(target); if (!number) return send(sock, remoteJid(msg), 'Usage: reply to a user or provide a phone number.', msg); bannedUsers.add(number); saveJson('banned.json', [...bannedUsers]); return send(sock, remoteJid(msg), `🚫 Banned: ${number}`, msg); }, true, 'ADMIN');
 command('unban', 'Remove a user ban', async (sock, msg, args) => { const number = phoneOf(args[0]); if (!number) return send(sock, remoteJid(msg), 'Usage: .unban <phone>', msg); bannedUsers.delete(number); saveJson('banned.json', [...bannedUsers]); return send(sock, remoteJid(msg), `✅ Unbanned: ${number}`, msg); }, true, 'ADMIN');
 command('report', 'Report a message to the owner', async (sock, msg) => { const owner = normalizeJid(settings.ownerNumber); if (!owner) return send(sock, remoteJid(msg), '❌ Owner number is not configured.', msg); const text = textFromMessage(msg) || '(no text)'; await send(sock, owner, `🚨 *REPORT*\n\nFrom: ${senderJid(msg)}\nChat: ${remoteJid(msg)}\n\n${text}`, msg); return send(sock, remoteJid(msg), '✅ Report sent to the owner.', msg); }, false, 'ADMIN');
 
-live = createLegacyDispatchAdapter(commands, { getActor: (ctx) => ctx.actor });
-const lifecycle = createLiveLifecycle({ dbPath: path.join(DATA_DIR, 'automation.json'), pick, emojis: settings.autoReactEmojis, getSettings: () => settings, isStable: () => runtimeState.lifecycleStable });
 const runtimeState = { lifecycleStable: false, connected: false, credentialsReady: false };
+live = createLegacyDispatchAdapter(commands, { getActor: (ctx) => ctx.actor });
+const lifecycle = createLiveLifecycle({ dbPath: path.join(DATA_DIR, 'automation.json'), pick, emojis: settings.autoReactEmojis, isStable: () => runtimeState.lifecycleStable, runAutomations: false, runModeration: false });
 
 async function handleIncoming(sock, msg) {
   if (!msg?.message) return;
   rememberMessage(msg);
   const jid = remoteJid(msg);
   const text = textFromMessage(msg);
-  const commandText = text.startsWith(settings.prefix) ? text.slice(settings.prefix.length).trim() : '';
-  const parts = commandText ? commandText.split(/\s+/) : [];
-  const parsed = parts.length ? { name: parts[0].toLowerCase(), args: parts.slice(1) } : null;
+  const trimmed = text.startsWith(settings.prefix) ? text.slice(settings.prefix.length).trim() : '';
+  const parsed = trimmed ? { name: trimmed.split(/\s+/)[0]?.toLowerCase(), args: trimmed.split(/\s+/).slice(1) } : null;
   const ctx = createMessageContext(msg, { text, command: parsed, sock, isGroup: isGroup(jid), isStatus: isStatus(jid), isOwner: isOwner(msg), isMasterSudo: isMasterSudo(msg) });
   if (isStatus(jid)) return;
   if (bannedUsers.has(phoneOf(senderJid(msg)))) return;
-  if (antilinkGroups.has(jid) && /https?:\/\//i.test(text) && !hasAdminAccess(msg)) { await sock.sendMessage(jid, { delete: msg.key }); return; }
-
-  // Non-command automations are deliberately fire-and-forget so command dispatch
-  // is not held up by read receipts, reactions, or auto-replies.
+  if (antilinkGroups.has(jid) && /(?:https?:\/\/|www\.)\S+/i.test(text) && !hasAdminAccess(msg)) { await sock.sendMessage(jid, { delete: msg.key }).catch(() => {}); return; }
+  if (parsed) {
+    if (settings.mode === 'private' && !msg.key.fromMe && !hasAdminAccess(msg)) return;
+    try { await live.dispatch(ctx); } catch (error) { logger.error({ err: error, command: parsed.name }, 'command dispatch failed'); }
+    return;
+  }
   if (settings.autoRead) void sock.readMessages([msg.key]).catch(() => {});
   if (settings.autoReact && !msg.key.fromMe) void sock.sendMessage(jid, { react: { text: pick(settings.autoReactEmojis), key: msg.key } }).catch(() => {});
-  if (settings.autoReply.enabled && text && !text.startsWith(settings.prefix) && !msg.key.fromMe) void send(sock, jid, settings.autoReply.message, msg).catch(() => {});
-  if (!parsed) return;
-  if (settings.mode === 'private' && !msg.key.fromMe && !hasAdminAccess(msg)) return;
-  try { await live.dispatch(ctx); } catch (error) { logger.error({ err: error, command: parsed.name }, 'command dispatch failed'); }
+  if (settings.autoReply.enabled && text && !msg.key.fromMe) void send(sock, jid, settings.autoReply.message, msg).catch(() => {});
 }
 
 async function connect() {
@@ -141,7 +137,7 @@ async function connect() {
   });
   sock.ev.on('messages.upsert', async ({ messages }) => { for (const msg of messages || []) await handleIncoming(sock, msg); });
   sock.ev.on('messages.update', async (updates) => { if (!settings.antiDelete) return; for (const update of updates || []) { const protocol = update.update?.message?.protocolMessage; if (!protocol || protocol.type !== 0 || !protocol.key?.id) continue; const cached = recentMessages.get(protocol.key.id); if (!cached) continue; const jid = remoteJid(cached); const body = textFromMessage(cached); if (body) void send(sock, jid, `🗑️ *Deleted message recovered*\n\n${body}`, cached).catch(() => {}); } });
-  sock.ev.on('call', async (calls) => { if (!settings.antiCall.enabled) return; for (const call of calls || []) try { if (call.status === 'offer' || call.status === 'ringing') { await sock.rejectCall(call.id, call.from); void sock.sendMessage(call.from, { text: settings.antiCall.message }).catch(() => {}); } } catch {} });
+  sock.ev.on('call', async (calls) => { if (!settings.antiCall.enabled) return; for (const call of calls || []) try { if (call.status === 'offer' || call.status === 'ringing') { await sock.rejectCall(call.id, call.from); await sock.sendMessage(call.from, { text: settings.antiCall.message }); } } catch {} });
   return sock;
 }
 
