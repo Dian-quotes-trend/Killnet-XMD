@@ -7,21 +7,20 @@ const { createLiveLifecycle } = require('../lib/live-lifecycle');
 async function run() {
   const commands = new Map([
     ['ping', { description: 'ping', ownerOnly: false, category: 'GENERAL', handler: async (sock, msg, args) => ({ sock, msg, args }) }],
-    ['admin', { description: 'admin', ownerOnly: true, category: 'ADMIN', handler: async () => ({}) }],
+    ['settings', { description: 'settings', ownerOnly: true, category: 'ADMIN', handler: async () => ({}) }],
+    ['antilink', { description: 'antilink', ownerOnly: true, category: 'GROUP', handler: async () => ({}) }],
   ]);
   const adapter = createLegacyDispatchAdapter(commands);
   assert.ok(adapter.registry.resolve('ping'));
   assert.strictEqual(adapter.registry.resolve('ping').category, 'CORE');
+  assert.strictEqual(adapter.registry.resolve('settings').category, 'CONFIG');
+  assert.strictEqual(adapter.registry.resolve('antilink').category, 'MODERATION');
   assert.deepStrictEqual(adapter.registry.list('CORE').map((item) => item.name), ['ping']);
-  assert.deepStrictEqual(adapter.registry.list('ADMIN').map((item) => item.name), ['admin']);
+  assert.deepStrictEqual(adapter.registry.list('CONFIG').map((item) => item.name), ['settings']);
+  assert.deepStrictEqual(adapter.registry.list('MODERATION').map((item) => item.name), ['antilink']);
 
   const lifecycle = createLiveLifecycle({
-    db: {
-      get: () => undefined,
-      set: () => {},
-      delete: () => {},
-      has: () => false,
-    },
+    db: { get: () => undefined, set: () => {}, delete: () => {}, has: () => false },
     pick: (x) => x[0],
     emojis: ['👍'],
     isStable: () => false,
@@ -30,16 +29,10 @@ async function run() {
   assert.throws(() => lifecycle.phase6.assertReady(), /gate is closed/i);
   assert.strictEqual(lifecycle.state({ connected: false, credentialsReady: false }).stable, false);
 
-  let updateCount = 0;
-  const fakeSock = {
-    ev: {
-      on(event) {
-        if (event === 'messages.upsert') updateCount += 1;
-      },
-    },
-  };
+  let upsertSubscriptions = 0;
+  const fakeSock = { ev: { on(event) { if (event === 'messages.upsert') upsertSubscriptions += 1; } } };
   lifecycle.attach(fakeSock);
-  assert.strictEqual(updateCount, 1);
+  assert.strictEqual(upsertSubscriptions, 1);
   console.log('Runtime architecture tests passed');
 }
 
