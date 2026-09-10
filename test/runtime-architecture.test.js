@@ -7,8 +7,8 @@ const { createLiveLifecycle } = require('../lib/live-lifecycle');
 async function run() {
   const commands = new Map([['ping', { description: 'ping', ownerOnly: false, category: 'GENERAL', handler: async (sock, msg, args) => ({ sock, msg, args }) }]]);
   const adapter = createLegacyDispatchAdapter(commands);
-  assert.ok(adapter.registry.get('ping'));
-  assert.strictEqual(adapter.registry.get('ping').category, 'CORE');
+  assert.ok(adapter.registry.resolve('ping'));
+  assert.strictEqual(adapter.registry.resolve('ping').category, 'CORE');
 
   const lifecycle = createLiveLifecycle({ db: { get: () => undefined, set: () => {}, delete: () => {}, has: () => false }, pick: (x) => x[0], emojis: ['👍'], isStable: () => false });
   assert.ok(lifecycle.dispatcher);
