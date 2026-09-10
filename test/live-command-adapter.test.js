@@ -11,6 +11,7 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   const legacy = new Map([
     ['ping', { description: 'Ping', handler: async () => 'pong', category: 'GENERAL' }],
     ['settings', { description: 'Settings', handler: async () => 'settings', ownerOnly: true, category: 'ADMIN' }],
+    ['tagall', { description: 'Legacy tag all', handler: async () => 'tagall', category: 'GROUP' }],
   ]);
 
   const registry = createRegistryFromLegacyMap(legacy);
@@ -25,7 +26,7 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   }
 
   // Existing legacy commands remain authoritative during incremental migration.
-  assert.strictEqual(registry.resolve('tagall').description, undefined);
+  assert.strictEqual(registry.resolve('tagall').description, 'Legacy tag all');
   assert.strictEqual(registry.resolve('tagall').ownerOnly, false);
   assert.strictEqual(registry.resolve('kick').handler instanceof Function, true);
   assert.strictEqual(registry.resolve('grouplink').handler instanceof Function, true);
