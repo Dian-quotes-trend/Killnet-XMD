@@ -17,7 +17,18 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   assert.strictEqual(registry.has('ping'), true);
   assert.strictEqual(registry.resolve('ping').category, 'CORE');
   assert.strictEqual(registry.resolve('settings').ownerOnly, true);
-  assert.deepStrictEqual(registry.names(), ['ping', 'settings']);
+
+  for (const name of ['add', 'kick', 'promote', 'demote', 'gname', 'grouplink']) {
+    assert.strictEqual(registry.has(name), true, `${name} should be registered`);
+    assert.strictEqual(registry.resolve(name).category, 'GROUP');
+    assert.strictEqual(registry.resolve(name).groupOnly, true);
+  }
+
+  // Existing legacy commands remain authoritative during incremental migration.
+  assert.strictEqual(registry.resolve('tagall').description, undefined);
+  assert.strictEqual(registry.resolve('tagall').ownerOnly, false);
+  assert.strictEqual(registry.resolve('kick').handler instanceof Function, true);
+  assert.strictEqual(registry.resolve('grouplink').handler instanceof Function, true);
 
   console.log('live-command-adapter tests passed');
 })();
