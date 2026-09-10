@@ -10,6 +10,10 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
 
   const legacy = new Map([
     ['ping', { description: 'Ping', handler: async () => 'pong', category: 'GENERAL' }],
+    ['menu', { description: 'Menu', handler: async () => 'menu', category: 'GENERAL' }],
+    ['help', { description: 'Help duplicate', handler: async () => 'help', category: 'GENERAL' }],
+    ['delete', { description: 'Delete', handler: async () => 'delete', category: 'GROUP' }],
+    ['del', { description: 'Delete duplicate', handler: async () => 'del', category: 'GROUP' }],
     ['settings', { description: 'Settings', handler: async () => 'settings', ownerOnly: true, category: 'ADMIN' }],
     ['tagall', { description: 'Legacy tag all', handler: async () => 'tagall', category: 'GROUP' }],
   ]);
@@ -18,6 +22,12 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   assert.strictEqual(registry.has('ping'), true);
   assert.strictEqual(registry.resolve('ping').category, 'CORE');
   assert.strictEqual(registry.resolve('settings').ownerOnly, true);
+
+  // Semantic duplicates are aliases of one canonical command.
+  assert.strictEqual(registry.names().includes('help'), false);
+  assert.strictEqual(registry.names().includes('del'), false);
+  assert.strictEqual(registry.resolve('help').name, 'menu');
+  assert.strictEqual(registry.resolve('del').name, 'delete');
 
   for (const name of ['add', 'kick', 'promote', 'demote', 'gname', 'grouplink']) {
     assert.strictEqual(registry.has(name), true, `${name} should be registered`);
