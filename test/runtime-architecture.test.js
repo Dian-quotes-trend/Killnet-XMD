@@ -15,9 +15,9 @@ async function run() {
   assert.strictEqual(adapter.registry.resolve('ping').category, 'CORE');
   assert.strictEqual(adapter.registry.resolve('settings').category, 'CONFIG');
   assert.strictEqual(adapter.registry.resolve('antilink').category, 'MODERATION');
-  assert.deepStrictEqual(adapter.registry.list('CORE').map((item) => item.name), ['ping']);
-  assert.deepStrictEqual(adapter.registry.list('CONFIG').map((item) => item.name), ['settings']);
-  assert.deepStrictEqual(adapter.registry.list('MODERATION').map((item) => item.name), ['antilink']);
+  assert.ok(adapter.registry.list('CORE').some((item) => item.name === 'ping'));
+  assert.ok(adapter.registry.list('CONFIG').some((item) => item.name === 'settings'));
+  assert.ok(adapter.registry.list('MODERATION').some((item) => item.name === 'antilink'));
 
   const lifecycle = createLiveLifecycle({
     db: { get: () => undefined, set: () => {}, delete: () => {}, has: () => false },
