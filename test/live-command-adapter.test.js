@@ -16,6 +16,15 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
     ['del', { description: 'Delete duplicate', handler: async () => 'del', category: 'GROUP' }],
     ['settings', { description: 'Settings', handler: async () => 'settings', ownerOnly: true, category: 'ADMIN' }],
     ['tagall', { description: 'Legacy tag all', handler: async () => 'tagall', category: 'GROUP' }],
+    ['autoread', { description: 'Legacy autoread', handler: async () => 'legacy' }],
+    ['autoreact', { description: 'Legacy autoreact', handler: async () => 'legacy' }],
+    ['autotyping', { description: 'Legacy typing', handler: async () => 'legacy' }],
+    ['autorecording', { description: 'Legacy recording', handler: async () => 'legacy' }],
+    ['autorecordtype', { description: 'Legacy record/type', handler: async () => 'legacy' }],
+    ['autoreply', { description: 'Legacy reply', handler: async () => 'legacy' }],
+    ['anticall', { description: 'Legacy call', handler: async () => 'legacy' }],
+    ['anticallmsg', { description: 'Legacy call message', handler: async () => 'legacy' }],
+    ['antilink', { description: 'Legacy link', handler: async () => 'legacy' }],
   ]);
 
   const registry = createRegistryFromLegacyMap(legacy);
@@ -23,7 +32,6 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   assert.strictEqual(registry.resolve('ping').category, 'CORE');
   assert.strictEqual(registry.resolve('settings').ownerOnly, true);
 
-  // Semantic duplicates are aliases of one canonical command.
   assert.strictEqual(registry.names().includes('help'), false);
   assert.strictEqual(registry.names().includes('del'), false);
   assert.strictEqual(registry.resolve('help').name, 'menu');
@@ -35,7 +43,14 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
     assert.strictEqual(registry.resolve(name).groupOnly, true);
   }
 
-  // Existing legacy commands remain authoritative during incremental migration.
+  // Phase 4 commands have one canonical registry entry even when legacy definitions exist.
+  for (const name of ['autoread', 'autoreact', 'autotyping', 'autorecording', 'autorecordtype', 'autoreply', 'anticall', 'anticallmsg', 'antilink']) {
+    assert.strictEqual(registry.has(name), true, `${name} should be registered`);
+    assert.strictEqual(registry.resolve(name).handler instanceof Function, true);
+  }
+  assert.strictEqual(registry.names().filter((name) => name === 'autoread').length, 1);
+  assert.strictEqual(registry.names().filter((name) => name === 'autoreply').length, 1);
+
   assert.strictEqual(registry.resolve('tagall').description, 'Legacy tag all');
   assert.strictEqual(registry.resolve('tagall').ownerOnly, false);
   assert.strictEqual(registry.resolve('kick').handler instanceof Function, true);
