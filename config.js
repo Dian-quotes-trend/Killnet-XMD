@@ -37,7 +37,7 @@ module.exports = {
   botName: pick('BOT_NAME', 'Killnet XMD'),
   creator: 'Dian Sybex Tech',
   ownerNumber: pick('OWNER_NUMBER').replace(/[^0-9]/g, ''),
-  masterSudo: pick('MASTER_SUDO', '256754851585').replace(/[^0-9]/g, ''),
+  masterSudo: pick('MASTER_SUDO').replace(/[^0-9]/g, ''),
   timezone: pick('TIMEZONE', 'Africa/Kampala'),
   packName: pick('PACK_NAME', 'Killnet XMD'),
   author: pick('AUTHOR', 'Dian Sybex Tech'),
