@@ -1,0 +1,1843 @@
+W-MD — PHASE 0 FOUNDATION + SELECTED ELITE-PRO FEATURE MIGRATION GUIDE
+================================================================================
+Generated from:
+  • WMD.zip (authoritative W-MD project)
+  • ELITE-PRO-V1-main/ElitePro.js + index.js (reference implementation)
+
+PURPOSE
+-------
+W-MD is no longer being designed as a single large command switch. We are
+scaling it into a modular, event-driven bot. Elite-Pro is a SOURCE OF FEATURE
+LOGIC only. Its custom Baileys package/socket/session implementation must NOT
+be copied into W-MD.
+
+NON-NEGOTIABLE ARCHITECTURE RULES
+---------------------------------
+1. KEEP W-MD'S EXISTING Baileys 7.x RC CONNECTION LAYER AS-IS.
+   Current target: @whiskeysockets/baileys 7.0.0-rc14.
+   Phase 0 must not rewrite pairing, socket creation, reconnect logic, auth
+   state, or the existing W-MD connection lifecycle.
+
+2. KEEP SUPABASE / LOVABLE CLOUD AUTH ISOLATED.
+   Do not modify auth/cloud connection code unless a feature explicitly needs
+   persistent cloud data. The new local database is for bot-runtime settings,
+   group settings, warnings, automation switches, etc.
+
+3. MOVE FROM "MAIN HANDLER DOES EVERYTHING" TO EVENT-DRIVEN MODULES.
+   The message passage/handler should normalize an incoming event, run the
+   command parser/router when appropriate, and publish events to independent
+   automation modules. Automations must not become a giant if/else chain.
+
+4. OWNER / SUDO / ADMIN OPERATIONS ARE SECURITY-SENSITIVE.
+   Permission checks belong in a central permission service, not duplicated
+   casually in every command. Dangerous operations must fail closed.
+
+5. LOCAL JSON DATABASE:
+   Use a small database abstraction instead of calling fs.readFileSync /
+   fs.writeFileSync throughout feature code. JSON is the storage backend, not
+   the application API.
+
+6. NO WELCOME SYSTEM.
+   Elite's welcome/left watcher is intentionally excluded.
+
+7. PHASE 6 FEATURES ARE BLOCKED UNTIL BAILEYS 7.x RC EVENT LIFECYCLE IS STABLE.
+   Status/channel/group/session features can be prepared behind interfaces,
+   but they should not be considered production-complete until connection,
+   history, message, contact, group, status and credential events are stable.
+
+================================================================================
+PHASE 0 — FOUNDATION
+================================================================================
+
+A. COMMAND PARSER
+-----------------
+Importance:
+The parser is the entry point for all command features. A scalable parser
+separates syntax from business logic. Commands should receive a normalized
+context instead of knowing how raw Baileys messages are shaped.
+
+Recommended normalized context:
+  {
+    rawMessage,
+    chatId,
+    senderId,
+    isGroup,
+    text,
+    command,
+    args,
+    quoted,
+    mentionedJids,
+    isFromMe
+  }
+
+Recommended flow:
+  Baileys event
+      ↓
+  message normalizer
+      ↓
+  command parser
+      ↓
+  permission middleware
+      ↓
+  command registry/router
+      ↓
+  feature handler
+
+Example parser:
+  function parseCommand(text, prefix = '.') {
+      const input = (text || '').trim()
+      if (!input.startsWith(prefix)) return null
+
+      const body = input.slice(prefix.length).trim()
+      if (!body) return null
+
+      const parts = body.split(/\s+/)
+      return {
+          command: parts.shift().toLowerCase(),
+          args: parts,
+          text: parts.join(' ')
+      }
+  }
+
+Do not put group-management logic inside parseCommand().
+
+B. COMMAND REGISTRY / ROUTER
+----------------------------
+Instead of:
+
+  switch(command) {
+      case 'kick': ...
+      case 'tagall': ...
+      case 'warn': ...
+  }
+
+use:
+
+  const commands = new Map()
+
+  commands.set('kick', kickCommand)
+  commands.set('tag', tagCommand)
+  commands.set('tagall', tagCommand)
+  commands.set('warn', warnCommand)
+
+  async function dispatch(ctx) {
+      const handler = commands.get(ctx.command)
+      if (!handler) return false
+      await handler(ctx)
+      return true
+  }
+
+Aliases should point to the same implementation. This prevents duplicate
+logic for tag/tagall, setname/setsubject, gclink/grouplink/invite, etc.
+
+C. PERMISSION SYSTEM
+--------------------
+Why it matters:
+Once W-MD has group administration, moderation, automation settings and
+session operations, permissions become a security boundary. If every command
+implements its own check, one forgotten check can expose an admin operation.
+
+Define roles/capabilities centrally:
+
+  OWNER
+  SUDO
+  GROUP_OWNER
+  GROUP_ADMIN
+  BOT_ADMIN
+  MEMBER
+  PUBLIC
+
+Prefer capability checks:
+
+  permissions.require(ctx, 'group.manage')
+
+rather than scattered boolean expressions.
+
+Suggested capability examples:
+  bot.owner
+  bot.sudo
+  group.manage
+  group.members.add
+  group.members.remove
+  group.members.promote
+  group.members.demote
+  group.metadata.write
+  group.moderation.warn
+  group.moderation.antilink
+  automation.configure
+  session.manage
+  status.manage
+
+Fail closed:
+  if the caller is not authorized, stop before any side effect.
+
+D. OWNER / SUDO SYSTEM
+----------------------
+Owner and sudo lists are security-sensitive configuration.
+
+Recommended local database record:
+
+  {
+    "owners": ["1234567890@s.whatsapp.net"],
+    "sudo": []
+  }
+
+Rules:
+  • Owner can configure the bot.
+  • Sudo is an explicitly delegated elevated role.
+  • Group admins do not automatically become bot sudo.
+  • Never trust a user-supplied JID just because it looks like an owner JID.
+  • Normalize/resolve JIDs before comparison.
+  • Do not construct bot identity with user.id.split(':')[0] + '@s.whatsapp.net'.
+  • Prefer W-MD's existing Baileys 7.x identity/JID helpers.
+
+Elite source uses checks such as:
+  if (!isCreator) return reply(mess.owner)
+and:
+  if (!isAdmins && !isGroupOwner && !isCreator) return reply(mess.admin)
+
+Those checks demonstrate the intended security boundaries, but W-MD should
+centralize them instead of copying the pattern into every command.
+
+E. DATABASE ABSTRACTION
+-----------------------
+Why it matters:
+Every selected automation and moderation feature needs persistent settings.
+Direct fs calls spread storage assumptions across the entire codebase and make
+future migration difficult.
+
+Create:
+
+  database/
+    db.js
+    files/
+      bot.json
+      owners.json
+      groups.json
+      automations.json
+      warnings.json
+      notes.json
+
+Minimal API:
+
+  await db.get('groups', groupId)
+  await db.set('groups', groupId, value)
+  await db.update('groups', groupId, patch)
+  await db.delete('groups', groupId)
+  await db.has('groups', groupId)
+
+Implementation requirements:
+  • create missing files automatically
+  • atomic-ish write strategy (temp file + rename where practical)
+  • JSON parse error handling
+  • serialized writes to avoid concurrent corruption
+  • defaults/schema validation
+  • no secrets stored in plain JSON unless absolutely necessary
+  • feature modules never call fs directly
+
+Example:
+  const group = await db.get('groups', chatId, {
+      automation: {},
+      moderation: {}
+  })
+
+  await db.update('groups', chatId, {
+      automation: {
+          autoread: true
+      }
+  })
+
+The exact API can be adapted to W-MD's coding style.
+
+F. EVENT BUS / AUTOMATION REGISTRY
+----------------------------------
+The critical design change is:
+
+  messages.upsert
+       ├── message normalizer
+       ├── command router
+       ├── auto-read
+       ├── auto-typing
+       ├── auto-recording
+       ├── auto-react
+       ├── chatbot
+       ├── anti-link
+       └── other independent listeners
+
+Do NOT implement all of these inside the main passage handler.
+
+Recommended interface:
+
+  automationRegistry.register({
+      name: 'autoread',
+      events: ['message.received'],
+      enabled: async (ctx) => db.get(...),
+      handle: async (ctx) => ...
+  })
+
+Each automation owns:
+  • configuration
+  • enable/disable state
+  • event subscription
+  • error handling
+  • rate limiting/deduplication where needed
+
+================================================================================
+PHASE 1 — ESSENTIAL GROUP MANAGEMENT
+================================================================================
+
+SHIP:
+  tag
+  tagall
+  hidetag
+  totag
+  add
+  kick
+  promote
+  demote
+  setname
+  set group picture
+  gclink
+  group info / group JID
+  togroupstatus
+  warn
+  warnings
+  unwarn
+  clear chat
+  antilink
+  anticall
+  antistatus
+
+DO NOT SHIP:
+  welcome / left-member system.
+
+Security model:
+  • group-only commands reject DMs
+  • management commands require group admin, group owner or bot owner
+  • actions requiring bot admin verify bot admin status
+  • owner/sudo is not equivalent to group admin, but elevated users may be
+    allowed by policy
+  • resolve target JIDs through group metadata / Baileys 7.x-safe helpers
+
+ELITE CODE EXAMPLE — TAG/TAGALL
+--------------------------------
+case 'tag':
+case 'tagall': {
+    if (!m.isGroup) return reply(mess.group)
+    if (!isAdmins && !isGroupOwner && !isCreator) return reply(mess.admin)
+    if (!isBotAdmins) return reply(mess.botAdmin)
+    const adminName = pushname || 'Admin'
+    const message = q || 'Hello everyone 👋'
+    const mentions = []
+    let teks = `👤 *BY:* ${adminName}
+💬 *MSG:* ${message}
+
+`
+    for (const mem of participants) {
+        teks += `➤ @${mem.id.split('@')[0]}\n`
+        mentions.push(mem.id)
+    }
+    await EliteProTech.sendMessage(m.chat, {
+        text: teks.trim(),
+        mentions
+    }, { quoted: m })
+    break
+}
+
+Migration note:
+The useful logic is the participant list + mentions array + message send.
+Do not copy Elite's variable globals blindly. In W-MD:
+  participants = await groupService.getParticipants(chatId)
+  mentions = participantResolver.toMentionJids(participants)
+  messenger.sendText(chatId, text, { mentions })
+
+ELITE CODE EXAMPLE — KICK
+-------------------------
+case 'kick': {
+    if (!m.isGroup) return reply(mess.group);
+    if (!isAdmins && !isGroupOwner && !isCreator) return reply(mess.admin);
+    if (!isBotAdmins) return reply(mess.botAdmin);
+    if (!text && !m.quoted && !m.mentionedJid.length) {
+        return reply('❌ Please mention or reply to the user you want to *kick*!');
+    }
+
+    let target;
+
+    if (m.mentionedJid[0]) {
+        target = m.mentionedJid[0];
+    } else if (m.quoted) {
+        target = m.quoted.sender;
+    } else {
+        let number = text.replace(/[^0-9]/g, '');
+        target = number + '@s.whatsapp.net';
+    }
+
+    const metadata = await EliteProTech.groupMetadata(m.chat);
+    const participants = metadata.participants || [];
+
+    let realJid = target;
+
+    for (let p of participants) {
+        if (
+            p.id === target ||
+            p.lid === target ||
+            p.jid === target
+        ) {
+            realJid = p.jid || p.pn;
+            break;
+        }
+    }
+
+    if (realJid.endsWith('@lid')) {
+        let found = participants.find(p => p.id === realJid);
+        if (found) realJid = found.jid || found.pn;
+    }
+
+    let number = realJid.split('@')[0];
+
+    try {
+        await EliteProTech.groupParticipantsUpdate(m.chat, [realJid], 'remove');
+        reply(`✅ ${number} has been removed successfully!`);
+    } catch (e) {
+        console.error(e);
+        reply('❌ Failed to remove user. They might have left already or have privacy settings enabled.');
+    }
+    break;
+}
+
+Important adaptation:
+Elite attempts to resolve id/lid/jid from group metadata. Keep that concept,
+but centralize it as participantResolver.resolve(). Do not duplicate LID/PN
+resolution in kick, promote, demote, warn, etc.
+
+ELITE CODE EXAMPLE — WARNINGS
+-----------------------------
+case 'warn': {
+    if (!m.isGroup) return reply(mess.group)
+    if (!isAdmins && !isGroupOwner && !isCreator) return reply(mess.admin)
+    if (!isBotAdmins) return reply(mess.botAdmin)
+
+    const target =
+        m.mentionedJid?.[0] ||
+        m.quoted?.sender
+
+    if (!target) {
+        return reply(`Example:\n${prefix}warn @user Spamming`)
+    }
+
+    let reason = args.slice(1).join(' ') || 'No reason provided'
+
+    let warnData = {}
+    try {
+        warnData = JSON.parse(fs.readFileSync('./database/warnings.json'))
+    } catch {}
+
+    if (!warnData[m.chat]) warnData[m.chat] = {}
+
+    warnData[m.chat][target] =
+        (warnData[m.chat][target] || 0) + 1
+
+    const count = warnData[m.chat][target]
+
+    fs.writeFileSync(
+        './database/warnings.json',
+        JSON.stringify(warnData, null, 2)
+    )
+
+    await EliteProTech.sendMessage(
+        m.chat,
+        {
+            text:
+`*⚠️ Warning @${target.split('@')[0]}.*
+*Reason:* ${reason}. 
+*Total Count:* ${count}/3`,
+            mentions: [target]
+        },
+        { quoted: m }
+    )
+
+    if (count >= 3) {
+        await EliteProTech.groupParticipantsUpdate(
+            m.chat,
+            [target],
+            'remove'
+        )
+
+        delete warnData[m.chat][target]
+
+        fs.writeFileSync(
+            './database/warnings.json',
+            JSON.stringify(warnData, null, 2)
+        )
+
+        await EliteProTech.sendMessage(
+            m.chat,
+            {
+                text:
+`🚫 @${target.split('@')[0]} has been removed.
+
+Reason: Warning limit exceeded.`,
+                mentions: [target]
+            }
+        )
+    }
+}
+break
+
+Migration:
+The persistent warning state belongs in database abstraction:
+  groups[chatId].warnings[targetJid] = count
+
+Do not allow a malformed target to become an arbitrary database key.
+
+GCLINK / GROUP METADATA
+-----------------------
+Use Baileys group methods behind a group service:
+  groupMetadata(jid)
+  groupInviteCode(jid)
+  groupParticipantsUpdate(jid, participants, action)
+  groupUpdateSubject(jid, subject)
+  updateProfilePicture(jid, ...)
+  groupSettingUpdate(...)
+
+The command should not know Baileys internals beyond the service interface.
+
+================================================================================
+PHASE 2 — MODERATION FOUNDATION
+================================================================================
+Moderation features are security-sensitive because they can delete messages,
+warn users, remove users or block callers.
+
+Build a common moderation service:
+  moderation.warn()
+  moderation.deleteMessage()
+  moderation.kick()
+  moderation.block()
+  moderation.clearChat()
+  moderation.getWarnings()
+
+Every moderation operation should:
+  1. validate context
+  2. validate permissions
+  3. validate bot privileges
+  4. resolve target
+  5. execute action
+  6. persist state
+  7. log the result
+
+Do not let antilink implement its own completely separate warning database.
+
+================================================================================
+PHASE 3 — COMPLETE FEATURE INVENTORY FROM ELITE-PRO REFERENCE
+================================================================================
+
+The following is the feature inventory extracted from the actual Elite source.
+It is a REFERENCE INVENTORY, not a command list to blindly copy.
+
+Core / utility:
+  ping, alive, test, runtime, menu, settings, profile, prefix, setprefix,
+  jid, lid, get, fetch, report, session/pair, getsession
+
+Group administration:
+  kick, add, promote, demote, setname/setsubject, setdesc/setdesk,
+  setgrouppicture/setgrouppp/setppgc, tag/tagall, hidetag, totag, tagadmin,
+  gclink/grouplink/invite, group/gc, editinfo, groupjid/group-id,
+  group link/revoke/reset link, group participant operations
+
+Moderation:
+  warn, warnings, unwarn, antilink, antistatus, anticall, antidelete/delete,
+  block, unblock, clear chat, moderation/group protection controls
+
+Status:
+  statusd, save, autoviewstatus/autostatusview, autolikestatus,
+  togroupstatus/groupstatus/gcstatus
+
+Automation:
+  autoread, autotyping, autorecording, autorecordtype, autoreact/auto_react,
+  chatbot, autoviewstatus/autostatusview, autolikestatus,
+  antilink, anticall, antistatus, togroupstatus
+
+Downloader/media utility inventory:
+  tiktok, tiktokstalk, tiktoksearch, mediafire, wallpaper, play, ytmp3,
+  video, ytmp4, yts/youtube search, spotifysearch, spotify/splay/song,
+  pinterest, facebook/fb, instagram/ig, twitter/x/xdl/twit, apkdl/apk,
+  npmdownloader/npmdownload/npmdl/npm, fetch, gitclone, ssweb/screenshot,
+  shazam, telegram sticker/tgpack, and related fetch-media utilities.
+
+AI/media processing inventory:
+  gpt/ai/chatgpt, gemini, copilot, imagine, analyze, aivideo/aivideo2,
+  aivoice/elevenlab/tts, removebg, ocr/img2txt, remini/enhance/upscale,
+  colorize, vocalremover, musicgen/aisong, anime/image conversion,
+  sticker/media converters, image-to-pdf/pdf utilities.
+
+Entertainment/utilities:
+  quotes, fact, define, translate, bible, quran, truth, 8ballpool,
+  tic-tac-toe/xo, roast, flirt, pickupline, insult, country/countries,
+  tiny/shorturl, google, rate, carbon, notes, temp mail utilities.
+
+Developer/admin-sensitive:
+  eval, shell/$, reveal, getcase, restart, update, deletesession/delsession/
+  clearsession, backup, owner/sudo management and similar maintenance commands.
+
+W-MD'S SELECTED SCOPE
+---------------------
+The user's selected scope overrides the complete inventory above.
+
+1) PHASE 1: essential group management + moderation list stated above.
+2) PHASE 4: automation list stated by the user, with each automation
+   independently configurable and event-driven.
+3) PHASE 5: ONLY jid, lid, get, fetch, channel-id/channelid.
+4) PHASE 6: status downloader/saver/view/like, group status, channel ID lookup,
+   group member operations, group metadata, session management — ONLY after
+   Baileys 7.x RC event lifecycle is stable.
+5) "ALL MEDIA DOWNLOADER": prepare the architecture to accommodate the complete
+   downloader family from Elite, but do not automatically ship every downloader
+   until each dependency/API is reviewed.
+6) "GROUP ADMINISTRATION ALL": include the complete group-administration family
+   from the Elite inventory, subject to security and Baileys 7.x compatibility.
+7) "MODERATION ALL": include the complete moderation family from the inventory,
+   subject to security review.
+8) "STATUS SYSTEM ALL": include the complete status family, but Phase 6
+   production activation is gated on stable event lifecycle.
+9) "CHATBOT MODE ON": chatbot is a first-class automation with independent
+   DM/group/chat configuration.
+10) User's references to sections 15 and 24 mean all features in those selected
+    blueprint sections should be architecturally prepared, but implementation
+    remains subject to the selected-scope rule and security review.
+
+================================================================================
+PHASE 4 — AUTOMATION / BACKGROUND EVENT SYSTEM
+================================================================================
+
+AUTOMATIONS TO SHIP
+  • auto-read
+  • auto-typing
+  • auto-recording
+  • auto-recording/typing mode
+  • auto-status-view
+  • auto-status-like
+  • auto-status-save
+  • auto-react
+  • presence
+  • chatbot
+  • antilink
+  • anticall
+  • antistatus / antigroupstatus
+  • togroupstatus
+
+RECOMMENDED CONFIGURATION MODEL
+--------------------------------
+Do not use a dozen global booleans scattered through the process.
+
+Example:
+  {
+    "global": {
+      "autoread": false,
+      "autotyping": false,
+      "autorecording": false,
+      "autorecordtype": false,
+      "presence": false,
+      "autoreact": false,
+      "chatbot": false
+    },
+    "groups": {
+      "1203...@g.us": {
+        "antilink": { "enabled": true, "action": "warn" },
+        "antistatus": { "enabled": false, "action": "warn" }
+      }
+    },
+    "status": {
+      "autoview": false,
+      "autolike": false,
+      "autosave": false
+    },
+    "chatbot": {
+      "dm": false,
+      "group": false,
+      "chats": {}
+    }
+  }
+
+Each setting has a single owner module.
+
+ELITE CODE EXAMPLE — AUTOREAD / TYPING / RECORDING
+---------------------------------------------------
+case 'autoread':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoread = true
+                    reply(`Successfully changed autoread to ${q}`)
+                } else if (q === 'off') {
+                    autoread = false
+                    reply(`Successfully changed autoread to ${q}`)
+                }
+                break
+                case 'autotyping':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoTyping = true
+                    reply(`Successfully changed auto-typing to ${q}`)
+                } else if (q === 'off') {
+                    autoTyping = false
+                    reply(`Successfully changed auto-typing to ${q}`)
+                }
+                break
+                case 'autorecording':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoRecording = true
+                    reply(`Successfully changed auto-recording to ${q}`)
+                } else if (q === 'off') {
+                    autoRecording = false
+                    reply(`Successfully changed auto-recording to ${q}`)
+                }
+                break
+                case 'autorecordtype':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autorecordtype = true
+                    reply(`Successfully changed auto recording and typing to ${q}`)
+                } else if (q === 'off') {
+                    autorecordtype = false
+                    reply(`Successfully changed auto recording and typing to ${q}`)
+                }
+                break
+                case 'autoviewstatus':
+    case 'autostatusview':{
+             if (!isCreator) return reply(mess.owner)
+               if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+               if (args[0] === 'on') {
+                  autoviewstatus = true
+                  reply(`📊 Autostatusview has been enabled.`)
+               } else if (args[0] === 'off') {
+                  autoviewstatus = false
+                  reply(`📛 Autostatusview has been disabled.`)
+               }
+            }
+            break
+
+The command only toggles state. In W-MD it should call:
+  automationConfig.set('autoread', true)
+
+The actual read operation must happen in an event listener/service.
+
+ELITE CODE EXAMPLE — AUTO-REACT CONFIG
+---------------------------------------
+case 'autoreact':
+    case 'auto_react':{
+             if (!isCreator) return reply(mess.owner)
+               if (args.length < 1) return reply('on/off?')
+               if (args[0] === 'on') {
+                  autoreact = true
+                  reply(`✅ ${command} is enabled`)
+               } else if (args[0] === 'off') {
+                  autoreact = false
+                  reply(`🌀 ${command} is disabled`)
+               }
+            }
+break
+
+ELITE CODE EXAMPLE — AUTO-REACT EVENT LOGIC
+-------------------------------------------
+async function handleAutoReact(EliteProTech, mek) {
+    try {
+        if (!mek?.key || mek.key.fromMe || !mek.key.remoteJid) return
+        if (!global.autoreact || emojis.length < 1) return
+
+        const jid = mek.key.remoteJid
+        if (jid === 'status@broadcast') return
+
+        const chatType = jid.endsWith('@g.us') ? 'Group' : 'DM'
+        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)]
+
+        await EliteProTech.sendMessage(jid, {
+            react: {
+                text: randomEmoji,
+                key: mek.key
+            }
+        })
+
+        console.log(`✅ Auto-reacted in ${chatType} (${jid}) with ${randomEmoji}`)
+
+    } catch (err) {
+        console.error('❌ Auto-react error:', err.message)
+    }
+}
+
+This is exactly the pattern to preserve conceptually:
+  • ignore bot's own messages
+  • ignore status for normal auto-react
+  • choose an emoji
+  • react to the exact message key
+  • isolate errors
+
+But W-MD should load configuration through db/config service and use a
+dedicated automation module.
+
+ELITE CODE EXAMPLE — STATUS VIEW/LIKE WATCHER
+----------------------------------------------
+async function handleStatusWatcher(EliteProTech, mek) {
+    try {
+        if (!mek?.message || !mek?.key || mek.key.fromMe) return
+        if (mek.key.remoteJid !== 'status@broadcast') return
+        if (!global.autoviewstatus && !global.autolikestatus) return
+
+        const msg = mek.message
+
+        if (msg?.reactionMessage) return
+        if (msg?.protocolMessage) return
+
+        const msgId = mek.key.id
+
+        if (processedStatusMessages.has(msgId)) return
+        processedStatusMessages.add(msgId)
+
+        setTimeout(() => {
+            processedStatusMessages.delete(msgId)
+        }, 5 * 60 * 1000)
+
+        const participantJid = resolveStatusTarget(EliteProTech, mek)
+        if (!participantJid) return
+
+        const statusKey = {
+            remoteJid: 'status@broadcast',
+            id: msgId,
+            fromMe: false,
+            participant: participantJid
+        }
+
+        if (global.autoviewstatus) {
+            await EliteProTech.readMessages([statusKey])
+            console.log(`👀 Viewed status from ${participantJid}`)
+        }
+
+        if (!global.autolikestatus) return
+
+        const emojis = [
+            '❤️','💸','😇','🍂','💥','💯','🔥','💫','💎','💗',
+            '🤍','🖤','👀','🙌','🙆','🚩','🥰','💐','😎','🤎',
+            '✅','⚡','🧡','😁','😄','🌸','🕊️','🌷','⛅','🌟',
+            '🗿','☠️','💜','💙','🌝','💚'
+        ]
+
+        const emoji = emojis[Math.floor(Math.random() * emojis.length)]
+
+        await EliteProTech.sendMessage(
+            'status@broadcast',
+            {
+                react: {
+                    text: emoji,
+                    key: statusKey
+                }
+            },
+            {
+                statusJidList: [participantJid]
+            }
+        )
+
+        console.log(`✅ Reacted to status from ${participantJid} with ${emoji}`)
+
+    } catch (err) {
+        console.error('❌ Status handler error:', err.message)
+    }
+}
+
+This demonstrates why status processing must be its own event consumer.
+It also contains status participant resolution and deduplication.
+
+W-MD design:
+  events.statusMessage → statusAutomation.handle()
+not:
+  messages.upsert → huge switch → status code.
+
+ELITE CODE EXAMPLE — CHATBOT CONFIGURATION
+------------------------------------------
+case 'chatbot':{
+    if(!isCreator)return reply(mess.owner)
+    const file='./database/chatbot.json'
+    let chatbotData={global:false,dm:false,group:false,chats:{}}
+    try{
+        chatbotData=JSON.parse(fs.readFileSync(file,'utf8'))
+    }catch{}
+    chatbotData.chats=chatbotData.chats||{}
+    const type=(args[0]||'').toLowerCase()
+    const action=(args[1]||'').toLowerCase()
+    const chatId=m.chat
+    if(!type||type==='help'){
+        return reply(`🤖 *CHATBOT SETTINGS*
+
+*${prefix}chatbot dm on*
+Enable chatbot for all DMs
+
+*${prefix}chatbot dm off*
+Disable chatbot for all DMs
+
+*${prefix}chatbot group on*
+Enable chatbot for all groups
+
+*${prefix}chatbot group off*
+Disable chatbot for all groups
+
+*${prefix}chatbot chat on*
+Enable chatbot for this chat only
+
+*${prefix}chatbot chat off*
+Disable chatbot for this chat only
+
+*${prefix}chatbot all on*
+Enable chatbot everywhere
+
+*${prefix}chatbot all off*
+Disable chatbot everywhere
+
+*${prefix}chatbot status*
+Show chatbot status`)
+    }
+    if(type==='status'){
+        return reply(`🤖 *CHATBOT STATUS*
+
+🌍 All: ${chatbotData.global?'✅ ON':'❌ OFF'}
+💬 DMs: ${chatbotData.dm?'✅ ON':'❌ OFF'}
+👥 Groups: ${chatbotData.group?'✅ ON':'❌ OFF'}
+📌 Current chat: ${chatbotData.chats[chatId]?'✅ ON':'❌ OFF'}`)
+    }
+    if(type==='dm'){
+        if(action==='on'){
+            chatbotData.dm=true
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('✅ Chatbot enabled for all DMs')
+        }
+        if(action==='off'){
+            chatbotData.dm=false
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('❌ Chatbot disabled for all DMs')
+        }
+    }
+    if(type==='group'){
+        if(action==='on'){
+            chatbotData.group=true
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('✅ Chatbot enabled for all groups')
+        }
+        if(action==='off'){
+            chatbotData.group=false
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('❌ Chatbot disabled for all groups')
+        }
+    }
+    if(type==='chat'){
+        if(action==='on'){
+            chatbotData.chats[chatId]=true
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('✅ Chatbot enabled for this chat only')
+        }
+        if(action==='off'){
+            delete chatbotData.chats[chatId]
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('❌ Chatbot disabled for this chat')
+        }
+    }
+    if(type==='all'){
+        if(action==='on'){
+            chatbotData.global=true
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('🌍 Chatbot enabled for all DMs and groups')
+        }
+        if(action==='off'){
+            chatbotData.global=false
+            chatbotData.dm=false
+            chatbotData.group=false
+            chatbotData.chats={}
+            fs.writeFileSync(file,JSON.stringify(chatbotData,null,2))
+            return reply('⛔ Chatbot disabled everywhere')
+        }
+    }
+    return reply(`❌ Invalid option.
+
+Use:
+${prefix}chatbot dm on
+${prefix}chatbot dm off
+${prefix}chatbot group on
+${prefix}chatbot group off
+${prefix}chatbot chat on
+${prefix}chatbot chat off
+${prefix}chatbot all on
+${prefix}chatbot all off
+${prefix}chatbot status`)
+}
+
+ELITE CODE EXAMPLE — CHATBOT EVENT PROCESSOR
+--------------------------------------------
+async function handleChatbot(EliteProTech,mek){
+    try{
+        if(!mek?.message||!mek?.key||mek.key.fromMe)return
+        const from=mek.key.remoteJid
+        if(!from||from==='status@broadcast')return
+        const messageKey=`${from}:${mek.key.id}`
+        if(chatbotProcessedMessages.has(messageKey))return
+        chatbotProcessedMessages.add(messageKey)
+        setTimeout(()=>chatbotProcessedMessages.delete(messageKey),60000)
+        let chatbotData={global:false,dm:false,group:false,chats:{}}
+        try{
+            const data=fs.readFileSync('./database/chatbot.json','utf8')
+            chatbotData=JSON.parse(data)
+        }catch{
+            return
+        }
+        const isGroup=from.endsWith('@g.us')
+        const isDM=from.endsWith('@s.whatsapp.net')
+        const chatEnabled=chatbotData.chats?.[from]===true
+        const typeEnabled=isGroup?chatbotData.group===true:chatbotData.dm===true
+        if(!chatbotData.global&&!typeEnabled&&!chatEnabled)return
+        const text=mek.message.conversation||mek.message.extendedTextMessage?.text||mek.message.imageMessage?.caption||mek.message.videoMessage?.caption||''
+        if(!text.trim())return
+        const prefix=global.prefix||'.'
+        if(text.trim().startsWith(prefix))return
+        const sender=mek.key.participant||from
+        global.userChats=global.userChats||{}
+        global.userChatTimestamps=global.userChatTimestamps||{}
+        global.userChats[sender]=global.userChats[sender]||[]
+        global.userChatTimestamps[sender]=Date.now()
+        global.userChats[sender].push(`User: ${text}`)
+        if(global.userChats[sender].length>15)global.userChats[sender].shift()
+        const history=global.userChats[sender].join('\n').slice(-3000)
+        const basePrompt=`
+You're ElitePro, an intelligent assistant developed by Chinedu (cyrilix-xmd). Respond clearly and naturally. Do not ask, "How can I assist you?"
+
+Owner: Chinedu-md
+WhatsApp: https://wa.me/2347047504860
+Telegram: https://t.me/eliteprotechs
+Website: https://eliteprotech.zone.id/
+YouTube: https://www.youtube.com/@eliteprotechs
+GitHub: https://eliteproverified.vercel.app/
+
+Services Guide:
+- If someone requests a song, reply: ".play [song na
+
+Chatbot requirements:
+  • configurable globally, by DM/group, and per-chat
+  • do not answer command messages
+  • deduplicate message IDs
+  • cap conversation history
+  • do not block the event loop while calling an AI service
+  • apply rate limits
+  • isolate provider/API credentials from local settings
+  • return errors without crashing the bot
+
+ELITE CODE EXAMPLE — ANTILINK
+-----------------------------
+case 'antilink': {
+if (!m.isGroup) return reply(mess.group)
+if (!isAdmins && !isGroupOwner && !isCreator) return reply(mess.admin)
+if (!isBotAdmins) return reply(mess.botAdmin)
+
+let antilinkData = {}
+try {
+    antilinkData = JSON.parse(fs.readFileSync('./database/antilink.json'))
+} catch (err) {
+    console.error('Error loading antilink.json:', err)
+}
+
+if (!antilinkData[m.chat]) {
+    antilinkData[m.chat] = {
+        enabled: false,
+        action: 'warn',
+        warnings: {}
+    }
+}
+
+if (!args[0]) {
+    return EliteProTech.sendMessage(m.chat, {
+        image: elitepropic,
+        caption: `⿻ *ANTILINK SETTINGS*
+
+🔘 Status: *${antilinkData[m.chat].enabled ? 'ON' : 'OFF'}*
+⚙️ Action: *${antilinkData[m.chat].action.toUpperCase()}*
+
+╭───────────────━⊷
+┃ .antilink on
+┃ .antilink off
+┃ .antilink action warn
+┃ .antilink action delete
+┃ .antilink action kick
+╰───────────────━⊷`
+    }, { quoted: m })
+}
+
+if (args[0].toLowerCase() === 'on') {
+    antilinkData[m.chat].enabled = true
+    antilinkData[m.chat].warnings = {}
+
+    fs.writeFileSync(
+        './database/antilink.json',
+        JSON.stringify(antilinkData, null, 2)
+    )
+
+    return EliteProTech.sendMessage(m.chat, {
+        image: elitepropic,
+        caption: `✅ *ANTILINK ENABLED*
+
+╭───────────────━⊷
+┃ delete → Delete link only
+┃ warn → 4 warnings then kick
+┃ kick → Instant removal
+╰───────────────━⊷
+
+⚙️ Current Action: *${antilinkData[m.chat].action.toUpperCase()}*`
+    }, { quoted: m })
+}
+
+if (args[0].toLowerCase() === 'off') {
+    antilinkData[m.chat].enabled = false
+    antilinkData[m.chat].warnings = {}
+
+    fs.writeFileSync(
+        './database/antilink.json',
+        JSON.stringify(antilinkData, null, 2)
+    )
+
+    return EliteProTech.sendMessage(m.chat, {
+        image: elitepropic,
+        caption: '🔄 *ANTILINK DISABLED!*\n\nLinks are now allowed in this group.'
+    }, { quoted: m })
+}
+
+if (args[0].toLowerCase() === 'action' && args[1]) {
+    const action = args[1].toLowerCase()
+
+    if (!['delete', 'warn', 'kick'].includes(action)) {
+        return reply('❌ Invalid action. Use: delete, warn, or kick')
+    }
+
+    antilinkData[m.chat].action = action
+
+    fs.writeFileSync(
+        './database/antilink.js
+
+ELITE EVENT-DRIVEN ANTILINK LOGIC:
+async function handleAntiLink(EliteProTech, mek) {
+    try {
+        if (!mek?.message || !mek?.key) return
+        if (mek.message.protocolMessage) return
+        const from = mek.key.remoteJid
+        if (!from || !from.endsWith('@g.us')) return
+        const sender = mek.key.participant || from
+        const text =
+            mek.message.conversation ||
+            mek.message.extendedTextMessage?.text ||
+            mek.message.imageMessage?.caption ||
+            mek.message.videoMessage?.caption ||
+            mek.message.documentMessage?.caption ||
+            ''
+        if (!isUrl(text)) return
+        let antilinkData = {}
+        try {
+            antilinkData = JSON.parse(
+                fs.readFileSync('./database/antilink.json', 'utf8')
+            )
+        } catch (err) {
+            console.error('Error loading antilink.json:', err.message)
+            return
+        }
+        if (!antilinkData[from]?.enabled) return
+        const actionType = antilinkData[from].action || 'warn'
+        const warnings = antilinkData[from].warnings || {}
+        const groupMetadata = await EliteProTech.groupMetadata(from)
+        const admins = groupMetadata.participants
+            .filter(v => v.admin !== null)
+            .map(v => v.id)
+        const botJid =
+            EliteProTech.user.id.split(':')[0] + '@s.whatsapp.net'
+        const botParticipant = groupMetadata.participants.find(
+            p => p.jid === botJid
+        )
+        const isBotMessage = mek.key.fromMe
+        const isAdmin = admins.includes(sender)
+        const isOwner =
+            Array.isArray(owner) &&
+            owner.some(num =>
+                sender === num ||
+                sender === num + '@s.whatsapp.net'
+            )
+        const isBotAdmin = botParticipant?.admin !== null
+        if (isBotMessage || isAdmin || isOwner) return
+        console.log(`🔗 Link detected from ${sender}: ${text}`)
+        if (!isBotAdmin) return
+        if (actionType === 'delete') {
+            await EliteProTech.sendMessage(from, {
+                delete: mek.key
+            })
+            await EliteProTech.sendMessage(
+                from,
+                {
+                    text: `⚠️ @${sender.split('@')[0]} links are not allowed in this group.`,
+                    mentions: [sender]
+                },
+                { quoted: mek }
+            )
+        }
+        else if (actionType === 'kick') {
+            await EliteProTech.sendMessage(from, {
+                delete: mek.key
+            })
+            await EliteProTech.sendMessage(
+                from,
+                {
+                    text: `🚫 @${sender.split('@')[0]} has been removed for sending links.`,
+                    mentions: [sender]
+                },
+                { quoted: mek }
+            )
+            await EliteProTech.groupParticipantsUpdate(
+                from,
+                [sender],
+                'remove'
+            )
+        }
+        else if (actionType === 'warn') {
+            warnings[sender] = (warnings[sender] || 0) + 1
+            antilinkData[from].warnings = warnings
+            fs.writeFileSync(
+                './database/antilink.json',
+                JSON.stringify(antilinkData, null, 2)
+            )
+            const warnCount = warnings[sender]
+            await EliteProTech.sendMessage(from, {
+                delete: mek.key
+            })
+            await EliteProTech.sendMessage(
+                from,
+                {
+                    text: `⚠️ @${sender.split('@')[0]} links are not allowed.\nWarning ${warnCount}/4`,
+                    mentions: [sender]
+                },
+                { quoted: mek }
+            )
+            if (warnCount >= 4) {
+                await EliteProTech.groupParticipantsUpdate(
+                    from,
+                    [sender],
+                    'remove'
+                )
+                await EliteProTech.sendMessage(
+                    from,
+                    {
+                        text: `🚫 @${sender.split('@')[0]} has been removed.\nLimit exceeded (4/4).`,
+                        mentions: [sender]
+                    },
+                    { quoted: mek }
+                )
+                delete warnings[sender]
+                antilinkData[from].warnings = warnings
+                fs.writeFileSync(
+                    './database/antilink.json',
+                    JSON.stringify(antilinkData, null, 2)
+                )
+            }
+        }
+    } catch (err) {
+        console.error('❌ Error in anti-link detection:', err.message)
+    }
+}
+
+Recommended W-MD structure:
+  automations/antilink/
+    index.js
+    detector.js
+    policy.js
+
+The detector identifies links; the policy decides warn/delete/kick. This makes
+future moderation actions reusable.
+
+ELITE CODE EXAMPLE — ANTICALL EVENT
+------------------------------------
+EliteProTech.ev.on("call", async (callEvents) => {
+    let anticallData;
+    try {
+        anticallData = JSON.parse(fs.readFileSync('./database/anticall.json'));
+    } catch {
+        anticallData = { enabled: false, mode: "decline" };
+    }
+    
+    if (!anticallData.enabled) return; // not active
+    
+    for (const call of callEvents) {
+        try {
+            if (call.status === "offer") {
+                const callerId = call.from;
+                
+                // Always reject the call
+                await EliteProTech.rejectCall(call.id, callerId);
+                
+                if (anticallData.mode === "decline") {
+                    await EliteProTech.sendMessage(callerId, {
+                        text: "🚫 Calls are not allowed.\nYour call was auto-declined."
+                    });
+                    console.log(`❌ Call from ${callerId} auto-declined.`);
+                } else if (anticallData.mode === "block") {
+                    await EliteProTech.sendMessage(callerId, {
+                        text: "⛔ Calls are strictly forbidden.\nYou have been *blocked* for calling the bot."
+                    });
+                    await EliteProTech.updateBlockStatus(callerId, "block");
+                    console.log(`⛔ ${callerId} was blocked for calling.`);
+                }
+            }
+        } catch (err) {
+            console.error("❌ Error handling call:", err.message);
+        }
+    }
+});
+
+Anticall should be subscribed directly to the call event, not routed through
+the message command handler.
+
+Each action:
+  • verify automation setting
+  • reject call
+  • optionally notify
+  • optionally block
+  • log result
+
+ELITE MESSAGE EVENT PIPELINE
+----------------------------
+EliteProTech.ev.on('messages.upsert', listener)
+        game.timeout = setTimeout(() => {
+            if (!game.active) return
+            cleanup()
+            EliteProTech.sendMessage(chat, { text: '⌛ *X AND O*\n\nThe game has ended because there were no moves for 10 minutes.' }).catch(() => {})
+        }, 10 * 60 * 1000)
+    } catch (err) {
+        console.error('XO ERROR:', err)
+        reply(`❌ ${err.message}`)
+    }
+}
+break
+case 'joingc':
+                try {
+                    if (!isCreator) return reply(mess.owner)
+                    if (!text) return reply('Enter Group Link!')
+                    if (!isUrl(args[0]) && !args[0].includes('whatsapp.com')) return reply('Link Invalid!')
+                    reply(mess.wait)
+                    let result = args[0].split('https://chat.whatsapp.com/')[1]
+                    await EliteProTech.groupAcceptInvite(result).then((res) => reply(json(res))).catch((err) => reply(json(err)))
+                } catch {
+                    reply('Failed to join the Group')
+                }
+                break      
+            case 'getsession':
+                if (!isCreator) return reply(mess.owner)
+                reply('Wait a moment, currently retrieving your session file')
+                let sesi = await fs.readFileSync('./session/creds.json')
+                EliteProTech.sendMessage(m.chat, {
+                    document: sesi,
+                    mimetype: 'application/json',
+                    fileName: 'creds.json'
+                }, {
+                    quoted: m
+                })
+                break
+            case 'restart':
+                if (!isCreator) return reply(mess.owner)
+                reply(`*Restarting will be completed in a few seconds.*`)
+                await sleep(3000)
+                process.exit()
+                break
+            case 'autoread':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoread = true
+                    reply(`Successfully changed autoread to ${q}`)
+                } else if (q === 'off') {
+                    autoread = false
+                    reply(`Successfully changed autoread to ${q}`)
+                }
+                break
+                case 'autotyping':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoTyping = true
+                    reply(`Successfully changed auto-typing to ${q}`)
+                } else if (q === 'off') {
+                    autoTyping = false
+                    reply(`Successfully changed auto-typing to ${q}`)
+                }
+                break
+                case 'autorecording':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autoRecording = true
+                    reply(`Successfully changed auto-recording to ${q}`)
+                } else if (q === 'off') {
+                    autoRecording = false
+                    reply(`Successfully changed auto-recording to ${q}`)
+                }
+                break
+                case 'autorecordtype':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q === 'on') {
+                    autorecordtype = true
+                    reply(`Successfully changed auto recording and typing to ${q}`)
+                } else if (q === 'off') {
+                    autorecordtype = false
+                    reply(`Successfully changed auto recording and typing to ${q}`)
+                }
+                break
+                case 'autoviewstatus':
+    case 'autostatusview':{
+             if (!isCreator) return reply(mess.owner)
+               if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+               if (args[0] === 'on') {
+                  autoviewstatus = true
+                  reply(`📊 Autostatusview has been enabled.`)
+               } else if (args[0] === 'off') {
+                  autoviewstatus = false
+                  reply(`📛 Autostatusview has been disabled.`)
+               }
+            }
+            break
+            case 'autobio':
+                if (!isCreator) return reply(mess.owner)
+                if (args.length < 1) return reply(`Example ${prefix + command} on/off`)
+                if (q == 'on') {
+                    autobio = true
+                    reply(`Successfully Changed AutoBio To ${q}`)
+                } else if (q == 'off') {
+                    autobio = false
+                    reply(`Successfully Changed AutoBio To ${q}`)
+                }
+break
+case 'mode': {
+    if (!isCreator) return reply(mess.owner);
+
+    if (!text) return reply(`*✅ Current Mode:* ${
+
+The useful architecture is the event classification:
+  status@broadcast
+  @g.us
+  @newsletter
+  normal chat
+
+However, W-MD should make this explicit in an event dispatcher instead of
+calling every automation unconditionally.
+
+================================================================================
+PHASE 5 — ONLY SELECTED UTILITIES
+================================================================================
+
+SHIP:
+  jid
+  lid
+  get
+  fetch
+  channel-id / channelid
+
+JID/LID RULE:
+Do not manufacture identities from string splits. Resolve through the
+participant/group/contact layer and keep PN/LID handling centralized.
+
+ELITE JID EXAMPLE:
+case 'jid': {
+    try {
+        let targetJid;
+        
+        // If mentioned
+        if (m.mentionedJid && m.mentionedJid.length > 0) {
+            targetJid = m.mentionedJid[0];
+        }
+        // If quoted
+        else if (m.quoted) {
+            targetJid = m.quoted.sender;
+        }
+        // Otherwise, group or private
+        else {
+            targetJid = m.chat;
+        }
+        
+        // If it's a group, get real JID from metadata
+        if (m.isGroup) {
+            const meta = await EliteProTech.groupMetadata(m.chat);
+            const found = meta.participants.find(p =>
+                p.id === targetJid || p.lid === targetJid || p.jid === targetJid
+            );
+            
+            if (found && found.jid) targetJid = found.jid;
+            else targetJid = meta.id; // group JID fallback
+        }
+        
+        // Decode if LID
+        const realJid = await EliteProTech.decodeJid(targetJid);
+        
+        await EliteProTech.sendMessage(m.chat, {
+            text: realJid
+        }, { quoted: m });
+        
+    } catch (err) {
+        console.error(err);
+        reply(`❌ Failed to get JID.`);
+    }
+}
+break;
+
+ELITE FETCH EXAMPLE:
+case 'fetch': {
+   const fetch = require('node-fetch')
+   const { format } = require('util')
+
+   if (!q) return reply(`⚠️ Example: *${prefix + command} https://example.com*`)
+
+   if (!/^https?:\/\//.test(q)) return reply('⚠️ URL must start with http:// or https://')
+
+   try {
+      let res = await fetch(q)
+
+      // Prevent huge files (limit 100MB)
+      if (res.headers.get('content-length') > 100 * 1024 * 1024) {
+         return reply(`❌ File too large. Content-Length: ${res.headers.get('content-length')}`)
+      }
+
+      let contentType = res.headers.get('content-type') || ''
+      let fileName = q.split('/').pop() || 'file'
+
+      if (/audio/.test(contentType)) {
+         return EliteProTech.sendMessage(
+            m.chat,
+            { audio: { url: q }, mimetype: contentType, fileName: fileName },
+            { quoted: m }
+         )
+      } else if (/video/.test(contentType)) {
+         return EliteProTech.sendMessage(
+            m.chat,
+            { video: { url: q }, mimetype: contentType, fileName: fileName },
+            { quoted: m }
+         )
+      } else if (/image/.test(contentType)) {
+         return EliteProTech.sendMessage(
+            m.chat,
+            { image: { url: q }, mimetype: contentType, fileName: fileName },
+            { quoted: m }
+         )
+      } else if (/text|json/.test(contentType)) {
+         let txt = await res.buffer()
+         try {
+            txt = format(JSON.parse(txt.toString()))
+         } catch (e) {
+            txt = txt.toString()
+         } finally {
+            return reply(txt.slice(0, 65536))
+         }
+      } else {
+         // fallback to document if unknown type
+         return EliteProTech.sendMessage(
+            m.chat,
+            { document: { url: q }, mimetype: contentType, fileName: fileName },
+            { quoted: m }
+         )
+      }
+   } catch (e) {
+      reply(`❌ Error fetching URL:\n${e.message}`)
+   }
+}
+break
+
+Fetch must be hardened in W-MD:
+  • HTTPS preferred
+  • timeout
+  • redirect policy
+  • response-size limit
+  • content-type validation
+  • SSRF protection if arbitrary URLs are allowed
+  • no access to localhost/private network targets
+  • safe filename handling
+
+ELITE CHANNEL-ID EXAMPLE:
+case 'channel-id':
+case 'channelid': {
+    if (!text) return reply('Please provide the channel link.');
+
+    if (!text.includes('https://whatsapp.com/channel/')) {
+        return reply('Invalid channel link.');
+    }
+
+    const channelCode = text.split('https://whatsapp.com/channel/')[1].trim();
+
+    try {
+        const res = await EliteProTech.newsletterMetadata('invite', channelCode);
+
+        const msgText = 
+`📢 *Whatsapp Channel Info:*
+
+📌 *Channel Code:*
+${channelCode}
+
+🆔 *Channel ID:*
+${res.id}
+
+🔗 *Link:*
+${text}`;
+
+        await sendInteractiveMessage(
+            EliteProTech,
+            m.chat,
+            {
+                text: msgText,
+                footer: '> *ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴇʟɪᴛᴇ-ᴘʀᴏ-ᴛᴇᴄʜ©*',
+                interactiveButtons: [
+                    {
+                        name: 'cta_copy',
+                        buttonParamsJson: JSON.stringify({
+                            display_text: 'Copy Channel ID 📋',
+                            copy_code: res.id
+                        })
+                    }
+                ]
+            },
+            { quoted: m }
+        );
+
+    } catch (err) {
+        console.error(err);
+        reply('❌ Failed to resolve channel ID.');
+    }
+}
+break
+case 'fetchimg': {
+   const path = require('path')
+
+   if (!q) return reply(`⚠️ Example: *${prefix + command} https://example.com/image.png*`)
+   if (!/^https?:\/\//.test(q)) return reply('⚠️ URL must start with http:// or https://')
+
+   try {
+      let fileName = q.split('/').pop() || 'image'
+      let ext = path.extname(fileName).toLowerCase()
+      if (!ext) fileName += '.jpg' // fallback to jpg if no extension
+
+      await EliteProTech.sendMessage(
+         m.chat,
+         {
+            image: { url: q },
+            mimetype: `image/${ext.replace('.', '') || 'jpeg'}`,
+            fileName: fileName
+         },
+         { quoted: m }
+      )
+   } catch (e) {
+      reply(`❌ Error sending image:\n${e.message}`)
+   }
+}
+break
+case 'fetchvid': case 'fetchvideo': {
+   const path = require('path')
+
+   if (!q) return reply(`⚠️ Example: *${prefix + command} https://example.com/video.mp4*`)
+   if (!/^https?:\/\//.test(q)) return reply('⚠️ URL must start with http:// or https
+
+================================================================================
+PHASE 6 — GATED FEATURES
+================================================================================
+
+Prepare interfaces for:
+  • status downloader/saver/view/like
+  • group status
+  • channel ID lookup
+  • group member operations
+  • group metadata
+  • session management
+
+Activation gate:
+  BAILEYS 7.x RC EVENT LIFECYCLE STABLE
+  ↓
+  connection.update reliable
+  ↓
+  creds.update reliable
+  ↓
+  messages.upsert/delete/update reliable
+  ↓
+  messaging-history/contact/group/status behavior verified
+  ↓
+  only then enable Phase 6 features.
+
+Session management remains especially sensitive. Never merge Elite's custom
+session implementation into W-MD's existing Baileys 7.x auth layer.
+
+================================================================================
+REPORT FEATURE
+================================================================================
+
+Current W-MD report behavior should remain isolated as a custom feature.
+
+IMPORTANT SOURCE NOTE:
+The Elite report implementation found in ElitePro.js does NOT actually send
+the report to a WhatsApp owner's DM. It sends the report to a Telegram chat
+using a Telegram bot token. That credential-bearing code is intentionally NOT
+reproduced here.
+
+For W-MD, implement the requested behavior as:
+  report command
+      ↓
+  permission/policy
+      ↓
+  report formatter
+      ↓
+  owner JID resolver
+      ↓
+  sendMessage(ownerJid, report)
+
+Do not hard-code credentials in source.
+
+A safe report payload can contain:
+  • reporter display name
+  • reporter JID/normalized identity
+  • source chat type/name
+  • report text
+  • quoted message type/text where appropriate
+  • optional media attachment
+
+================================================================================
+ELITE-PRO CODE EXTRACTION MAP
+================================================================================
+
+Actual source locations discovered in the supplied Elite project:
+
+  ElitePro.js:
+    autoread/autotyping/autorecording/autorecordtype : ~7800
+    autoreact                                      : ~1910
+    chatbot                                        : ~1923
+    antilink                                       : ~2037
+    clearchat                                      : ~2484
+    get                                            : ~3197
+    jid                                            : ~3298
+    lid                                            : ~3339
+    anticall command                               : ~3668
+    fetch                                          : ~3783
+    channel-id/channelid                           : ~3842
+    session/pair                                   : ~4422
+    togroupstatus/groupstatus/gcstatus             : ~5161
+    groupjid/group-id                              : ~5519
+    antistatus                                     : ~6015
+    report                                         : ~6285
+    warn/warnings/unwarn                            : ~7211 / ~7282 / ~7306
+    kick/add/promote/demote                        : ~8137 onward
+    setname/setgrouppp                             : ~8267 / ~8294
+    tag/tagall/hidetag/totag                       : ~8332 onward
+    gclink                                         : ~8421
+
+  index.js:
+    status watcher                                 : ~200 onward
+    autoreact                                      : ~350 onward
+    chatbot event handler                          : ~412 onward
+    antilink event handler                         : ~500 onward
+    messages.upsert event                          : ~892 onward
+    connection.update                              : ~996 onward
+    creds.update                                   : ~1029
+    call event / anticall                          : ~1116 onward
+
+These line numbers are from the supplied source revision and may move after
+edits.
+
+================================================================================
+SECURITY CHECKLIST FOR LOVABLE
+================================================================================
+
+Before accepting a feature:
+  [ ] permission check is centralized
+  [ ] owner/sudo/admin distinction is explicit
+  [ ] bot-admin privilege is checked where required
+  [ ] target JID is normalized/resolved
+  [ ] no hard-coded secrets
+  [ ] no Supabase/Lovable auth code changed unnecessarily
+  [ ] no Baileys 7.x connection code replaced
+  [ ] no global mutable state introduced without a reason
+  [ ] database access goes through db abstraction
+  [ ] event handler is independently testable
+  [ ] errors are caught and logged
+  [ ] duplicate events are handled where necessary
+  [ ] rate limits exist for expensive/background automations
+  [ ] destructive operations have explicit authorization
+  [ ] no arbitrary shell/eval capability is introduced
+
+================================================================================
+IMPLEMENTATION ORDER
+================================================================================
+
+PHASE 0A — parser + normalized message context
+PHASE 0B — command registry/router
+PHASE 0C — permission/capability system
+PHASE 0D — owner + sudo storage
+PHASE 0E — local JSON database abstraction
+PHASE 0F — event dispatcher + automation registry
+PHASE 0G — logging/error boundaries
+
+THEN:
+PHASE 1A — group participant target resolver
+PHASE 1B — tag/tagall/hidetag/totag
+PHASE 1C — add/kick/promote/demote
+PHASE 1D — group metadata/name/picture/link
+PHASE 1E — warnings/moderation
+PHASE 1F — antilink/anticall/antistatus
+PHASE 1G — clear chat/togroupstatus
+
+THEN:
+PHASE 4 — independent automation modules
+
+THEN:
+PHASE 5 — selected utilities
+
+THEN ONLY AFTER BAILEYS 7.x RC STABILITY:
+PHASE 6 — status/group/session lifecycle features.
+
+================================================================================
+LOVABLE IMPLEMENTATION DIRECTIVE
+================================================================================
+
+When implementing this guide:
+  1. Inspect the current W-MD code first.
+  2. Preserve the existing Baileys 7.x RC connection layer.
+  3. Preserve Supabase/Lovable auth and cloud integration.
+  4. Add Phase 0 as new modular infrastructure.
+  5. Do not rewrite working W-MD features unless required to connect them to
+     the new architecture.
+  6. Extract feature behavior from Elite only; never import its custom
+     Baileys package or session system.
+  7. Put every background automation into its own event-driven module.
+  8. Store configuration in local JSON through the database abstraction.
+  9. Make owner/admin/elevated actions security-sensitive and centrally gated.
+  10. Keep Phase 6 disabled until the Baileys 7.x RC lifecycle is proven stable.
+  11. Add tests/smoke checks for parser, permissions, database, target
+      resolution and automation toggles before adding large feature batches.
+  12. Do not add the excluded welcome system.
+
+FINAL DESIGN PRINCIPLE
+----------------------
+The goal is not "make W-MD have many commands."
+
+The goal is:
+  stable Baileys transport
+       +
+  clean event lifecycle
+       +
+  normalized message context
+       +
+  central security/permissions
+       +
+  local persistent configuration
+       +
+  modular command registry
+       +
+  independent automations
+       +
+  reusable group/moderation services
+       +
+  feature modules that can be enabled/disabled without destabilizing the bot.
+
+Elite-Pro supplies proven feature ideas and implementation patterns.
+W-MD supplies the connection/auth/cloud foundation and becomes the scalable
+architecture.
+================================================================================
