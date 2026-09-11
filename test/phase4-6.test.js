@@ -7,13 +7,42 @@ const { jid, lid, get, fetchInput, channelId } = require('../lib/phase5-utils');
 const { classifyStatusMessage, buildStatusKey, buildStatusAction, sessionLifecycleState, assertLifecycleStable } = require('../lib/phase6-lifecycle');
 
 async function run() {
-  const config = { get: async () => normalizeConfig({ global: { autoread: true, autoreact: true } }) };
+  let configState = normalizeConfig({
+    global: { autoread: true, autoreact: true, autotyping: true, presence: true },
+    autoreply: { enabled: true, message: 'Auto reply' },
+    anticall: { enabled: true, message: 'No calls' },
+    status: { autoview: true, autolike: true, autosave: true },
+  });
+  const config = { get: async () => JSON.parse(JSON.stringify(configState)) };
   const modules = createAutomationModules({ config, pick: (items) => items[0], emojis: ['🔥'] });
   const message = { key: { remoteJid: '123@g.us', id: 'm1', fromMe: false }, message: { conversation: 'hello' } };
   assert.strictEqual(messageKey(message), '123@g.us:m1');
-  const sock = { readMessages: async (keys) => { assert.deepStrictEqual(keys, [message.key]); }, sendMessage: async () => {} };
+
+  const sent = [];
+  const sock = {
+    readMessages: async (keys) => { assert.deepStrictEqual(keys, [message.key]); },
+    sendMessage: async (jidValue, payload) => { sent.push({ jid: jidValue, payload }); },
+    sendPresenceUpdate: async () => {},
+    copyNForward: async () => {},
+    rejectCall: async () => {},
+    user: { id: '999@s.whatsapp.net' },
+  };
+
   assert.deepStrictEqual(await modules.autoread(sock, message), { ok: true });
   assert.strictEqual((await modules.autoreact(sock, message)).emoji, '🔥');
+  assert.deepStrictEqual((await modules.typingOrRecording(sock, message)).ok, true);
+  assert.deepStrictEqual((await modules.presence(sock, message)).ok, true);
+  assert.strictEqual((await modules.autoreply(sock, message)).ok, true);
+  assert.strictEqual(sent.some((item) => item.payload?.text === 'Auto reply'), true);
+
+  const callResult = await modules.anticall(sock, [{ id: 'call-1', from: '777@s.whatsapp.net' }]);
+  assert.strictEqual(callResult.handled, 1);
+
+  const statusMessage = { key: { remoteJid: 'status@broadcast', id: 's1', fromMe: false }, message: { imageMessage: {} } };
+  const statusResult = await modules.status(sock, statusMessage);
+  assert.strictEqual(statusResult.viewed, true);
+  assert.strictEqual(statusResult.liked, true);
+  assert.strictEqual(statusResult.saved, true);
 
   assert.strictEqual(jid(' 123@s.whatsapp.net '), '123@s.whatsapp.net');
   assert.strictEqual(lid('123@lid'), '123@lid');
