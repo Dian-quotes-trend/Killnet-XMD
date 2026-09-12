@@ -22,6 +22,7 @@ const ctx = {
   chatId: '120@g.us',
   rawMessage: { message: { extendedTextMessage: { contextInfo: { remoteJid: 'status@broadcast', stanzaId: 'ABC', participant: '123@s.whatsapp.net', quotedMessage: { conversation: 'hello' } } } } },
 };
-assert.strictEqual(statusTarget(ctx), null);
+assert.ok(statusTarget(ctx));
+assert.strictEqual(statusTarget(ctx).key.remoteJid, 'status@broadcast');
 
 console.log('Phase 6 tests passed');
