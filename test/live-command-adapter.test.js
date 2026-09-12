@@ -58,6 +58,23 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   assert.strictEqual(registry.names().filter((name) => name === 'statusview').length, 1);
   assert.strictEqual(registry.names().filter((name) => name === 'session').length, 1);
 
+  const menuMessages = [];
+  await registry.resolve('menu').handler({
+    prefix: '.',
+    settings: { mode: 'private' },
+    chatId: '123@s.whatsapp.net',
+    rawMessage: { key: { id: 'menu-1' } },
+    sock: { sendMessage: async (jid, payload) => { menuMessages.push({ jid, text: payload.text }); } },
+  });
+  assert.strictEqual(menuMessages.length, 1);
+  const menuText = menuMessages[0].text;
+  for (const command of ['.statusview', '.statuslike', '.statussave', '.statusdownload', '.groupstatus', '.session']) {
+    assert.ok(menuText.includes(command), `${command} should appear in menu`);
+  }
+  for (const alias of ['.viewstatus', '.likestatus', '.savestatus', '.downloadstatus', '.dlstatus', '.togroupstatus', '.pair', '.getsession']) {
+    assert.strictEqual(menuText.includes(alias), false, `${alias} should not duplicate the menu`);
+  }
+
   assert.strictEqual(registry.resolve('tagall').description, 'Legacy tag all');
   assert.strictEqual(registry.resolve('tagall').ownerOnly, false);
   assert.strictEqual(registry.resolve('kick').handler instanceof Function, true);
