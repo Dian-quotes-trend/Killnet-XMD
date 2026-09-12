@@ -36,7 +36,7 @@ async function run() {
   assert.strictEqual((await modules.autoreact(sock, message)).emoji, '🔥');
   assert.deepStrictEqual((await modules.typingOrRecording(sock, message)).ok, true);
   assert.deepStrictEqual((await modules.presence(sock, message)).ok, true);
-  assert.strictEqual((await modules.autoreply(sock, message)).ok, true);
+  assert.deepStrictEqual((await modules.autoreply(sock, message)).ok, true);
   assert.strictEqual(sent.some((item) => item.payload?.text === 'Auto reply'), true);
 
   const callResult = await modules.anticall(sock, [{ id: 'call-1', from: '777@s.whatsapp.net' }]);
@@ -53,7 +53,8 @@ async function run() {
   assert.strictEqual(lid('123@s.whatsapp.net'), '');
   assert.strictEqual(get({ a: { b: 2 } }, 'a.b'), 2);
   assert.strictEqual(fetchInput(' x ').value, 'x');
-  assert.strictEqual(channelId('https://example.test/').normalized, 'example.test');
+  assert.strictEqual(channelId('https://whatsapp.com/channel/Example_123').normalized, 'Example_123');
+  assert.strictEqual(channelId('123456789@newsletter').jid, '123456789@newsletter');
 
   assert.deepStrictEqual(classifyStatusMessage({ key: { remoteJid: 'status@broadcast', id: 's1', participant: '7@s.whatsapp.net' } }), { isStatus: true, participant: '7@s.whatsapp.net', id: 's1' });
   assert.deepStrictEqual(buildStatusKey({ id: 's1', participant: '7@s.whatsapp.net' }), { remoteJid: 'status@broadcast', id: 's1', fromMe: false, participant: '7@s.whatsapp.net' });
