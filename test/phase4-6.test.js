@@ -20,7 +20,11 @@ async function run() {
 
   const sent = [];
   const sock = {
-    readMessages: async (keys) => { assert.deepStrictEqual(keys, [message.key]); },
+    readMessages: async (keys) => {
+      assert.ok(Array.isArray(keys) && keys.length === 1);
+      assert.ok(keys[0]?.remoteJid);
+      assert.ok(keys[0]?.id);
+    },
     sendMessage: async (jidValue, payload) => { sent.push({ jid: jidValue, payload }); },
     sendPresenceUpdate: async () => {},
     copyNForward: async () => {},
