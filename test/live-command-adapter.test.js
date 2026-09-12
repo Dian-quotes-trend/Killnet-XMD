@@ -25,13 +25,15 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
     ['anticall', { description: 'Legacy call', handler: async () => 'legacy' }],
     ['anticallmsg', { description: 'Legacy call message', handler: async () => 'legacy' }],
     ['antilink', { description: 'Legacy link', handler: async () => 'legacy' }],
+    ['statusview', { description: 'Legacy status view', handler: async () => 'legacy' }],
+    ['statusdownload', { description: 'Legacy status download', handler: async () => 'legacy' }],
+    ['session', { description: 'Legacy session', handler: async () => 'legacy' }],
   ]);
 
   const registry = createRegistryFromLegacyMap(legacy);
   assert.strictEqual(registry.has('ping'), true);
   assert.strictEqual(registry.resolve('ping').category, 'CORE');
   assert.strictEqual(registry.resolve('settings').ownerOnly, true);
-
   assert.strictEqual(registry.names().includes('help'), false);
   assert.strictEqual(registry.names().includes('del'), false);
   assert.strictEqual(registry.resolve('help').name, 'menu');
@@ -43,13 +45,18 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
     assert.strictEqual(registry.resolve(name).groupOnly, true);
   }
 
-  // Phase 4 commands have one canonical registry entry even when legacy definitions exist.
   for (const name of ['autoread', 'autoreact', 'autotyping', 'autorecording', 'autorecordtype', 'autoreply', 'anticall', 'anticallmsg', 'antilink']) {
     assert.strictEqual(registry.has(name), true, `${name} should be registered`);
     assert.strictEqual(registry.resolve(name).handler instanceof Function, true);
   }
-  assert.strictEqual(registry.names().filter((name) => name === 'autoread').length, 1);
-  assert.strictEqual(registry.names().filter((name) => name === 'autoreply').length, 1);
+  for (const name of ['statusview', 'statuslike', 'statussave', 'statusdownload', 'groupstatus', 'session']) {
+    assert.strictEqual(registry.has(name), true, `${name} should be registered`);
+    assert.strictEqual(registry.resolve(name).handler instanceof Function, true);
+  }
+  assert.strictEqual(registry.resolve('pair').name, 'session');
+  assert.strictEqual(registry.resolve('downloadstatus').name, 'statusdownload');
+  assert.strictEqual(registry.names().filter((name) => name === 'statusview').length, 1);
+  assert.strictEqual(registry.names().filter((name) => name === 'session').length, 1);
 
   assert.strictEqual(registry.resolve('tagall').description, 'Legacy tag all');
   assert.strictEqual(registry.resolve('tagall').ownerOnly, false);
