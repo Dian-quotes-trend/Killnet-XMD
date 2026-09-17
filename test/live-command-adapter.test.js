@@ -68,11 +68,15 @@ const { createRegistryFromLegacyMap, normalizeCategory } = require('../lib/live-
   });
   assert.strictEqual(menuMessages.length, 1);
   const menuText = menuMessages[0].text;
+  const menuCommandLines = menuText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('│ • .'));
   for (const command of ['.statusview', '.statuslike', '.statussave', '.statusdownload', '.groupstatus', '.session']) {
-    assert.ok(menuText.includes(command), `${command} should appear in menu`);
+    assert.ok(menuCommandLines.some((line) => line.startsWith(`│ • ${command} »`)), `${command} should appear as a menu command`);
   }
   for (const alias of ['.viewstatus', '.likestatus', '.savestatus', '.downloadstatus', '.dlstatus', '.togroupstatus', '.pair', '.getsession']) {
-    assert.strictEqual(menuText.includes(alias), false, `${alias} should not duplicate the menu`);
+    assert.strictEqual(menuCommandLines.some((line) => line.startsWith(`│ • ${alias} »`)), false, `${alias} should not duplicate the menu`);
   }
 
   assert.strictEqual(registry.resolve('tagall').description, 'Legacy tag all');
