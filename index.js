@@ -97,16 +97,12 @@ async function handleIncoming(sock, msg) {
   const ctx = createMessageContext(msg, { text, command: parsed, sock, isGroup: isGroup(jid), isStatus: isStatus(jid), isOwner: isOwner(msg), isMasterSudo: isMasterSudo(msg) });
   if (isStatus(jid)) return;
   if (bannedUsers.has(phoneOf(senderJid(msg)))) return;
-  if (antilinkGroups.has(jid) && /(?:https?:\/\/|www\.)\S+/i.test(text) && !hasAdminAccess(msg)) { await sock.sendMessage(jid, { delete: msg.key }).catch(() => {}); return; }
-  if (parsed) {
+  // Group protection is owned by live-moderation (Phase 1/4).\n  if (parsed) {
     if (settings.mode === 'private' && !msg.key.fromMe && !hasAdminAccess(msg)) return;
     try { await live.dispatch(ctx); } catch (error) { logger.error({ err: error, command: parsed.name }, 'command dispatch failed'); }
     return;
   }
-  if (settings.autoRead) void sock.readMessages([msg.key]).catch(() => {});
-  if (settings.autoReact && !msg.key.fromMe) void sock.sendMessage(jid, { react: { text: pick(settings.autoReactEmojis), key: msg.key } }).catch(() => {});
-  if (settings.autoReply.enabled && text && !msg.key.fromMe) void send(sock, jid, settings.autoReply.message, msg).catch(() => {});
-}
+  // Non-command automations are owned by live-lifecycle (Phase 4).\n}
 
 async function connect() {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
@@ -137,8 +133,7 @@ async function connect() {
   });
   sock.ev.on('messages.upsert', async ({ messages }) => { for (const msg of messages || []) await handleIncoming(sock, msg); });
   sock.ev.on('messages.update', async (updates) => { if (!settings.antiDelete) return; for (const update of updates || []) { const protocol = update.update?.message?.protocolMessage; if (!protocol || protocol.type !== 0 || !protocol.key?.id) continue; const cached = recentMessages.get(protocol.key.id); if (!cached) continue; const jid = remoteJid(cached); const body = textFromMessage(cached); if (body) void send(sock, jid, `🗑️ *Deleted message recovered*\n\n${body}`, cached).catch(() => {}); } });
-  sock.ev.on('call', async (calls) => { if (!settings.antiCall.enabled) return; for (const call of calls || []) try { if (call.status === 'offer' || call.status === 'ringing') { await sock.rejectCall(call.id, call.from); await sock.sendMessage(call.from, { text: settings.antiCall.message }); } } catch {} });
-  return sock;
+  // Call automation is owned by live-lifecycle (Phase 4).\n  return sock;
 }
 
 (async () => { console.log(`\n╔══════════════════════════════════╗\n║        KILLNET XMD STARTUP       ║\n║        ${settings.creator.padEnd(24, ' ')}║\n╚══════════════════════════════════╝`); console.log(`⚙️ Prefix: ${settings.prefix} | Mode: ${settings.mode} | Pair mode: ${config.pairMode}`); console.log(`👑 Owner: +${ownerNumber() || 'not configured'} | 🛡️ Master Sudo: +${masterNumber() || 'not configured'}`); await connect(); })().catch((error) => { console.error('💥 Fatal startup error:', error); process.exitCode = 1; });
